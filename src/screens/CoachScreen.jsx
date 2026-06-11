@@ -9,9 +9,10 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [trainingHistory, setTrainingHistory] = useState([])
   const boxRef = useRef(null)
 
-  useEffect(() => { loadHistory() }, [user])
+  useEffect(() => { loadHistory(); loadTrainingHistory() }, [user])
 
   useEffect(() => {
     if (boxRef.current) boxRef.current.scrollTop = boxRef.current.scrollHeight
@@ -23,6 +24,19 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
       onConsumePending()
     }
   }, [pendingMessage, loaded])
+
+  async function loadTrainingHistory() {
+    if (!user) return
+    const since = new Date()
+    since.setDate(since.getDate() - 28)
+    const { data } = await supabase
+      .from('daily_updates')
+      .select('distance_km, pace, avg_hr, fatigue, pain, feel, actual_type, free_note, created_at')
+      .eq('user_id', user.id)
+      .gte('created_at', since.toISOString())
+      .order('created_at', { ascending: true })
+    if (data) setTrainingHistory(data)
+  }
 
   async function loadHistory() {
     if (!user) return
@@ -57,8 +71,8 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
 
     setLoading(true)
     try {
-      const history = next.slice(-8).map(m => ({ role: m.role, content: m.content }))
-      const reply = await callCoach(history, buildSystemPrompt(profile, weeklyKm))
+      const history = next.slice(-20).map(m => ({ role: m.role, content: m.content }))
+      const reply = await callCoach(history, buildSystemPrompt(profile, weeklyKm, trainingHistory))
       setMessages(prev => [...prev, { role: 'assistant', content: reply }])
       await persist('assistant', reply)
     } catch {
