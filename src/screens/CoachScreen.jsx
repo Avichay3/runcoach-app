@@ -27,13 +27,10 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
 
   async function loadTrainingHistory() {
     if (!user) return
-    const since = new Date()
-    since.setDate(since.getDate() - 28)
     const { data } = await supabase
       .from('daily_updates')
       .select('distance_km, pace, avg_hr, fatigue, pain, feel, actual_type, free_note, created_at')
       .eq('user_id', user.id)
-      .gte('created_at', since.toISOString())
       .order('created_at', { ascending: true })
     if (data) setTrainingHistory(data)
   }
