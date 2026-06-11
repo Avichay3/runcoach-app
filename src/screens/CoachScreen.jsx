@@ -146,6 +146,8 @@ function CoachMarkdown({ content }) {
   )
 }
 
+const DAY_RE = /^(?:יום\s+)?(?:ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת)(?:\s|·|$)/
+
 // Split coach text into workout-day cards + plain markdown chunks
 function parseCoachContent(content) {
   const lines = content.split('\n')
@@ -156,8 +158,8 @@ function parseCoachContent(content) {
     buf = []
   }
   for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/^\s*\*\*\s*(יום[^*]*?)\s*\*\*\s*$/)
-    if (m && m[1].includes('·')) {
+    const m = lines[i].match(/^\s*\*\*\s*(.+?)\s*\*\*\s*$/)
+    if (m && m[1].includes('·') && DAY_RE.test(m[1].trim())) {
       flush()
       const parts = m[1].split('·').map(s => s.trim())
       let detail = ''
@@ -186,7 +188,11 @@ function DayCard({ day, wtype, dist, detail }) {
           {wtype && <span style={{ ...styles.dayBadge, background: badgeBg, color: badgeText }}>{wtype}</span>}
           {dist && <span style={styles.dayDist}>{dist}</span>}
         </div>
-        {detail && <div style={styles.dayDetail}>{detail}</div>}
+        {detail && (
+          <div style={styles.dayDetail}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={detailComponents}>{detail}</ReactMarkdown>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -202,6 +208,11 @@ function workoutStyle(t) {
     'teal'
   if (!k) return { accent: 'var(--text3)', badgeBg: 'var(--surface3)', badgeText: 'var(--text3)' }
   return { accent: `var(--${k})`, badgeBg: `var(--${k}-l)`, badgeText: `var(--${k}-d)` }
+}
+
+const detailComponents = {
+  p: ({ children }) => <span>{children}</span>,
+  strong: ({ children }) => <strong style={{ fontWeight: 700, color: 'var(--text2)' }}>{children}</strong>,
 }
 
 const mdComponents = {
