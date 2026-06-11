@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { WORKOUT_TYPES, DAYS_HE, weekKeyDate, FEEL_LABELS } from '../lib/constants'
+import { parseGPX } from '../lib/gpx'
 
 const BODY_TAGS = [
   { t: 'רגליים קלות', c: 'ok' }, { t: 'נשימה טובה', c: 'ok' }, { t: 'קצב נוח', c: 'ok' }, { t: 'דופק יציב', c: 'ok' },
@@ -21,8 +22,35 @@ export default function UpdateScreen({ profile, onSendToCoach }) {
   const [fatigue, setFatigue] = useState(5)
   const [pain, setPain] = useState(0)
   const [submitting, setSubmitting] = useState(false)
+  const [gpxLoading, setGpxLoading] = useState(false)
+  const [gpxName, setGpxName] = useState('')
+  const fileRef = useRef(null)
 
   useEffect(() => { loadToday() }, [user])
+
+  async function handleGPX(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setGpxLoading(true)
+    try {
+      const text = await file.text()
+      const result = parseGPX(text)
+      setForm(prev => ({
+        ...prev,
+        km: result.distanceKm ? String(result.distanceKm) : prev.km,
+        time: result.timeText || prev.time,
+        avgHr: result.avgHr ? String(result.avgHr) : prev.avgHr,
+        maxHr: result.maxHr ? String(result.maxHr) : prev.maxHr,
+        pace: result.pace || prev.pace,
+      }))
+      setGpxName(result.name || file.name.replace('.gpx', ''))
+    } catch (err) {
+      alert('שגיאה בקריאת הקובץ: ' + err.message)
+    } finally {
+      setGpxLoading(false)
+      e.target.value = ''
+    }
+  }
 
   async function loadToday() {
     if (!user) return
@@ -75,6 +103,33 @@ export default function UpdateScreen({ profile, onSendToCoach }) {
 
   return (
     <div>
+      {/* GPX Import card */}
+      <div style={styles.gpxCard}>
+        <div style={styles.gpxLeft}>
+          <div style={styles.gpxIcon}>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 12a9 9 0 1 1-6.22-8.56" /><path d="M21 3v4h-4" /><path d="M21 7 12 16l-3-3" />
+            </svg>
+          </div>
+          <div>
+            <div style={styles.gpxTitle}>ייבא מ-Strava</div>
+            <div style={styles.gpxSub}>
+              {gpxName
+                ? <span style={{ color: 'var(--green)', fontWeight: 600 }}>✓ יובא: {gpxName}</span>
+                : 'בStrava: ··· ← Export GPX ← פתח פעילות'}
+            </div>
+          </div>
+        </div>
+        <input ref={fileRef} type="file" accept=".gpx" style={{ display: 'none' }} onChange={handleGPX} />
+        <button
+          style={styles.gpxBtn}
+          onClick={() => fileRef.current?.click()}
+          disabled={gpxLoading}
+        >
+          {gpxLoading ? <span className="spinner" style={{ width: 14, height: 14 }} /> : 'בחר קובץ GPX'}
+        </button>
+      </div>
+
       <div className="card">
         <div className="section-label">אימון מתוכנן להיום</div>
         <div style={{ background: 'var(--surface2)', borderRadius: 'var(--radius-sm)', padding: '12px 14px', marginBottom: 14 }}>
@@ -162,6 +217,31 @@ function tagSel(c) {
 }
 
 const styles = {
+  gpxCard: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    background: 'var(--surface)', borderRadius: 'var(--radius)',
+    padding: '14px 16px', marginBottom: 14,
+    boxShadow: 'var(--shadow-sm)',
+    gap: 12, flexWrap: 'wrap',
+  },
+  gpxLeft: { display: 'flex', alignItems: 'center', gap: 12 },
+  gpxIcon: {
+    width: 38, height: 38, borderRadius: 10,
+    background: 'linear-gradient(135deg, #FC4C02, #F05627)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+    boxShadow: '0 2px 8px rgba(240,86,39,.35)',
+  },
+  gpxTitle: { fontSize: 14, fontWeight: 600, marginBottom: 2 },
+  gpxSub: { fontSize: 12, color: 'var(--text3)', lineHeight: 1.4 },
+  gpxBtn: {
+    padding: '8px 16px', borderRadius: 10,
+    background: 'var(--teal)', color: '#fff',
+    border: 'none', fontSize: 13, fontWeight: 600,
+    boxShadow: '0 2px 6px rgba(240,86,39,.30)',
+    whiteSpace: 'nowrap', flexShrink: 0,
+    display: 'flex', alignItems: 'center', gap: 6,
+  },
   feelGrid: { display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 7, marginBottom: 14 },
   feelBtn: { padding: '10px 4px', border: '0.5px solid var(--border2)', borderRadius: 'var(--radius-sm)', background: 'var(--surface3)', textAlign: 'center', fontSize: 12, color: 'var(--text2)' },
   tagWrap: { display: 'flex', flexWrap: 'wrap', gap: 7 },

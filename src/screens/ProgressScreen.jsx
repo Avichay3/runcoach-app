@@ -322,7 +322,7 @@ const styles = {
   periodActive: {
     background: 'var(--teal)',
     color: '#fff',
-    borderColor: 'transparent',
+    border: '1.5px solid transparent',
     boxShadow: '0 2px 8px rgba(240,86,39,.30)',
   },
   emptyCard: {

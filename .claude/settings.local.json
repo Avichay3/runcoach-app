@@ -15,7 +15,9 @@
       "Bash(git push *)",
       "Bash(npm install *)",
       "Bash(node -e \"require\\('./node_modules/recharts/package.json'\\); console.log\\('ok'\\)\")",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "mcp__visualize__read_me",
+      "mcp__visualize__show_widget"
     ]
   }
 }
