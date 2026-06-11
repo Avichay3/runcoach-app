@@ -134,36 +134,98 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
 }
 
 function CoachMarkdown({ content }) {
+  const nodes = parseCoachContent(content)
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={{
-        p: ({ children }) => <p style={{ margin: '0 0 8px' }}>{children}</p>,
-        strong: ({ children }) => <strong style={{ fontWeight: 700, color: 'var(--text)' }}>{children}</strong>,
-        ul: ({ children }) => <ul style={{ margin: '4px 0 8px', paddingRight: 18, paddingLeft: 0 }}>{children}</ul>,
-        ol: ({ children }) => <ol style={{ margin: '4px 0 8px', paddingRight: 18, paddingLeft: 0 }}>{children}</ol>,
-        li: ({ children }) => <li style={{ marginBottom: 3 }}>{children}</li>,
-        h1: ({ children }) => <div style={mdHeading}>{children}</div>,
-        h2: ({ children }) => <div style={mdHeading}>{children}</div>,
-        h3: ({ children }) => <div style={mdHeading}>{children}</div>,
-        hr: () => <div style={{ height: 1, background: 'var(--border)', margin: '10px 0' }} />,
-        table: ({ children }) => (
-          <div style={{ overflowX: 'auto', margin: '6px 0 10px' }}>
-            <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13 }}>{children}</table>
-          </div>
-        ),
-        thead: ({ children }) => <thead>{children}</thead>,
-        th: ({ children }) => (
-          <th style={{ border: '1px solid var(--border)', padding: '5px 8px', background: 'var(--surface2)', fontWeight: 600, whiteSpace: 'nowrap', textAlign: 'right' }}>{children}</th>
-        ),
-        td: ({ children }) => (
-          <td style={{ border: '1px solid var(--border)', padding: '5px 8px', whiteSpace: 'nowrap', textAlign: 'right' }}>{children}</td>
-        ),
-      }}
-    >
-      {content}
-    </ReactMarkdown>
+    <>
+      {nodes.map((n, i) =>
+        n.kind === 'day'
+          ? <DayCard key={i} day={n.day} wtype={n.wtype} dist={n.dist} detail={n.detail} />
+          : <ReactMarkdown key={i} remarkPlugins={[remarkGfm]} components={mdComponents}>{n.text}</ReactMarkdown>
+      )}
+    </>
   )
+}
+
+// Split coach text into workout-day cards + plain markdown chunks
+function parseCoachContent(content) {
+  const lines = content.split('\n')
+  const nodes = []
+  let buf = []
+  const flush = () => {
+    if (buf.join('\n').trim()) nodes.push({ kind: 'md', text: buf.join('\n') })
+    buf = []
+  }
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^\s*\*\*\s*(יום[^*]*?)\s*\*\*\s*$/)
+    if (m && m[1].includes('·')) {
+      flush()
+      const parts = m[1].split('·').map(s => s.trim())
+      let detail = ''
+      const nxt = lines[i + 1]
+      if (nxt !== undefined && nxt.trim() && !nxt.trim().startsWith('**')) {
+        detail = nxt.trim()
+        i++
+      }
+      nodes.push({ kind: 'day', day: parts[0], wtype: parts[1] || '', dist: parts[2] || '', detail })
+    } else {
+      buf.push(lines[i])
+    }
+  }
+  flush()
+  return nodes
+}
+
+function DayCard({ day, wtype, dist, detail }) {
+  const { accent, badgeBg, badgeText } = workoutStyle(wtype)
+  return (
+    <div style={styles.dayCard}>
+      <div style={{ ...styles.dayAccent, background: accent }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={styles.dayHead}>
+          <span style={styles.dayName}>{day}</span>
+          {wtype && <span style={{ ...styles.dayBadge, background: badgeBg, color: badgeText }}>{wtype}</span>}
+          {dist && <span style={styles.dayDist}>{dist}</span>}
+        </div>
+        {detail && <div style={styles.dayDetail}>{detail}</div>}
+      </div>
+    </div>
+  )
+}
+
+function workoutStyle(t) {
+  const k =
+    /מנוח|רגיע/.test(t) ? null :
+    /אינטרוול|חזרות|ספרינט|fartlek|פרטלק/i.test(t) ? 'red' :
+    /טמפו|סף|threshold/i.test(t) ? 'amber' :
+    /ארוכ|long/i.test(t) ? 'purple' :
+    /קל|שחרור|התאוששות|recovery|easy/i.test(t) ? 'green' :
+    'teal'
+  if (!k) return { accent: 'var(--text3)', badgeBg: 'var(--surface3)', badgeText: 'var(--text3)' }
+  return { accent: `var(--${k})`, badgeBg: `var(--${k}-l)`, badgeText: `var(--${k}-d)` }
+}
+
+const mdComponents = {
+  p: ({ children }) => <p style={{ margin: '0 0 8px' }}>{children}</p>,
+  strong: ({ children }) => <strong style={{ fontWeight: 700, color: 'var(--text)' }}>{children}</strong>,
+  ul: ({ children }) => <ul style={{ margin: '4px 0 8px', paddingRight: 18, paddingLeft: 0 }}>{children}</ul>,
+  ol: ({ children }) => <ol style={{ margin: '4px 0 8px', paddingRight: 18, paddingLeft: 0 }}>{children}</ol>,
+  li: ({ children }) => <li style={{ marginBottom: 3 }}>{children}</li>,
+  h1: ({ children }) => <div style={mdHeading}>{children}</div>,
+  h2: ({ children }) => <div style={mdHeading}>{children}</div>,
+  h3: ({ children }) => <div style={mdHeading}>{children}</div>,
+  hr: () => <div style={{ height: 1, background: 'var(--border)', margin: '10px 0' }} />,
+  table: ({ children }) => (
+    <div style={{ overflowX: 'auto', margin: '6px 0 10px' }}>
+      <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13 }}>{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead>{children}</thead>,
+  th: ({ children }) => (
+    <th style={{ border: '1px solid var(--border)', padding: '5px 8px', background: 'var(--surface2)', fontWeight: 600, whiteSpace: 'nowrap', textAlign: 'right' }}>{children}</th>
+  ),
+  td: ({ children }) => (
+    <td style={{ border: '1px solid var(--border)', padding: '5px 8px', whiteSpace: 'nowrap', textAlign: 'right' }}>{children}</td>
+  ),
 }
 
 const mdHeading = { fontSize: 14, fontWeight: 700, margin: '8px 0 4px' }
@@ -271,4 +333,33 @@ const styles = {
     boxShadow: 'none',
   },
   dots: { display: 'flex', gap: 5, alignItems: 'center', padding: '2px 0' },
+  dayCard: {
+    display: 'flex',
+    gap: 10,
+    alignItems: 'stretch',
+    background: 'var(--surface2)',
+    borderRadius: 10,
+    padding: '9px 11px',
+    margin: '6px 0',
+  },
+  dayAccent: {
+    width: 4,
+    borderRadius: 4,
+    flexShrink: 0,
+  },
+  dayHead: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  dayName: { fontWeight: 700, fontSize: 13.5 },
+  dayBadge: {
+    fontSize: 11,
+    fontWeight: 600,
+    padding: '2px 9px',
+    borderRadius: 20,
+  },
+  dayDist: { fontSize: 12.5, color: 'var(--text2)', fontWeight: 600 },
+  dayDetail: { fontSize: 12.5, color: 'var(--text2)', marginTop: 3, lineHeight: 1.5 },
 }
