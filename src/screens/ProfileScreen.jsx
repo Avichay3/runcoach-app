@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { startStravaAuth, syncStrava, stravaConfigured } from '../lib/strava'
 
 const FIELDS = [
   { id: 'age', label: 'גיל', type: 'number', placeholder: '34' },
@@ -47,6 +48,8 @@ export default function ProfileScreen({ profile, onSave }) {
 
   return (
     <div>
+      <StravaCard profile={profile} />
+
       <div className="card">
         <div className="card-title">פרופיל המתאמן</div>
         <div className="card-sub">הנתונים נשמרים פעם אחת ומשמשים את המאמן בכל שיחה — כך הוא מכיר אותך והייעוץ מדויק.</div>
@@ -76,4 +79,74 @@ export default function ProfileScreen({ profile, onSave }) {
       </div>
     </div>
   )
+}
+
+function StravaCard({ profile }) {
+  const [syncing, setSyncing] = useState(false)
+  const [msg, setMsg] = useState(null)
+  const connected = Boolean(profile?.strava_athlete_id)
+  const configured = stravaConfigured()
+
+  async function handleSync() {
+    setSyncing(true)
+    setMsg(null)
+    try {
+      const { imported } = await syncStrava()
+      setMsg({ ok: true, text: imported > 0 ? `יובאו ${imported} ריצות חדשות` : 'הכל מסונכרן — אין ריצות חדשות' })
+    } catch (err) {
+      setMsg({ ok: false, text: 'שגיאה: ' + err.message })
+    }
+    setSyncing(false)
+  }
+
+  const lastSync = profile?.strava_last_sync
+    ? new Date(profile.strava_last_sync).toLocaleDateString('he-IL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : null
+
+  return (
+    <div style={s.card}>
+      <div style={s.head}>
+        <div style={s.icon}>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="#fff">
+            <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
+          </svg>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={s.title}>Strava</div>
+          <div style={s.sub}>
+            {!configured
+              ? 'ייבוא אוטומטי של ריצות מהשעון'
+              : connected
+                ? <span style={{ color: 'var(--green-d)', fontWeight: 600 }}>✓ מחובר{lastSync ? ` · סונכרן ${lastSync}` : ''}</span>
+                : 'חבר את החשבון וכל ריצה תיכנס אוטומטית'}
+          </div>
+        </div>
+      </div>
+
+      {!configured ? (
+        <div style={s.notice}>החיבור ל-Strava יופעל בקרוב — נדרשת הגדרת מפתח.</div>
+      ) : connected ? (
+        <div style={s.row}>
+          <button style={s.syncBtn} onClick={handleSync} disabled={syncing}>
+            {syncing ? <span className="spinner" style={{ width: 14, height: 14 }} /> : 'סנכרן ריצות עכשיו'}
+          </button>
+          {msg && <span style={{ fontSize: 12, color: msg.ok ? 'var(--green-d)' : 'var(--red-d)' }}>{msg.text}</span>}
+        </div>
+      ) : (
+        <button style={s.connectBtn} onClick={startStravaAuth}>התחבר ל-Strava</button>
+      )}
+    </div>
+  )
+}
+
+const s = {
+  card: { background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '16px 18px', marginBottom: 14, boxShadow: 'var(--shadow-sm)' },
+  head: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 },
+  icon: { width: 40, height: 40, borderRadius: 10, background: '#FC4C02', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 8px rgba(252,76,2,.35)' },
+  title: { fontSize: 15, fontWeight: 700 },
+  sub: { fontSize: 12.5, color: 'var(--text3)', lineHeight: 1.5, marginTop: 1 },
+  row: { display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
+  connectBtn: { width: '100%', padding: 11, borderRadius: 'var(--radius-sm)', background: '#FC4C02', color: '#fff', border: 'none', fontSize: 14, fontWeight: 600, boxShadow: '0 2px 8px rgba(252,76,2,.30)' },
+  syncBtn: { padding: '9px 18px', borderRadius: 'var(--radius-sm)', background: '#FC4C02', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 },
+  notice: { fontSize: 12.5, color: 'var(--text3)', background: 'var(--surface2)', borderRadius: 'var(--radius-sm)', padding: '10px 12px' },
 }

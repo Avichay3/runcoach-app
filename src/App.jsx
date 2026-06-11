@@ -3,6 +3,7 @@ import { useAuth } from './context/AuthContext'
 import { useProfile } from './lib/useProfile'
 import { supabase } from './lib/supabase'
 import { weekKeyDate } from './lib/constants'
+import { exchangeStravaCode, syncStrava } from './lib/strava'
 import AuthScreen from './screens/AuthScreen'
 import DashboardScreen from './screens/DashboardScreen'
 import PlannerScreen from './screens/PlannerScreen'
@@ -68,10 +69,40 @@ export default function App() {
   const [tab, setTab] = useState('dashboard')
   const [pendingMessage, setPendingMessage] = useState(null)
   const [weeklyKm, setWeeklyKm] = useState(0)
+  const [stravaToast, setStravaToast] = useState(null)
 
   useEffect(() => {
     if (session) loadWeeklyKm()
   }, [session, tab])
+
+  // Handle the Strava OAuth redirect (?code=...&scope=...)
+  useEffect(() => {
+    if (!session) return
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+    const scope = params.get('scope')
+    if (!code || !scope) return
+
+    // Clean the URL immediately so a refresh doesn't re-trigger
+    window.history.replaceState({}, '', window.location.pathname)
+    setTab('profile')
+    setStravaToast({ kind: 'loading', text: 'מתחבר ל-Strava ומייבא ריצות...' })
+
+    ;(async () => {
+      try {
+        const { athlete_name } = await exchangeStravaCode(code)
+        const { imported } = await syncStrava()
+        await reload()
+        setStravaToast({
+          kind: 'success',
+          text: `מחובר ל-Strava (${athlete_name}) — יובאו ${imported} ריצות`,
+        })
+      } catch (err) {
+        setStravaToast({ kind: 'error', text: 'החיבור ל-Strava נכשל: ' + err.message })
+      }
+      setTimeout(() => setStravaToast(null), 6000)
+    })()
+  }, [session])
 
   async function loadWeeklyKm() {
     const ws = weekKeyDate(0)
@@ -99,6 +130,13 @@ export default function App() {
 
   return (
     <div style={styles.app}>
+      {stravaToast && (
+        <div style={{ ...styles.toast, ...toastKind(stravaToast.kind) }}>
+          {stravaToast.kind === 'loading' && <span className="spinner" style={{ width: 14, height: 14 }} />}
+          <span>{stravaToast.text}</span>
+        </div>
+      )}
+
       {/* Top bar */}
       <div style={styles.topbar}>
         <div style={styles.logo}>
@@ -146,11 +184,30 @@ export default function App() {
   )
 }
 
+function toastKind(kind) {
+  if (kind === 'success') return { background: 'var(--green-l)', color: 'var(--green-d)' }
+  if (kind === 'error') return { background: 'var(--red-l)', color: 'var(--red-d)' }
+  return { background: 'var(--surface2)', color: 'var(--text2)' }
+}
+
 const styles = {
   app: {
     maxWidth: 900,
     margin: '0 auto',
     minHeight: '100vh',
+  },
+  toast: {
+    position: 'sticky',
+    top: 0,
+    zIndex: 60,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: '10px 16px',
+    fontSize: 13,
+    fontWeight: 600,
+    textAlign: 'center',
   },
   topbar: {
     display: 'flex',
