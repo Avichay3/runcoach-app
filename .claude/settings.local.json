@@ -17,7 +17,15 @@
       "Bash(node -e \"require\\('./node_modules/recharts/package.json'\\); console.log\\('ok'\\)\")",
       "Bash(npm run *)",
       "mcp__visualize__read_me",
-      "mcp__visualize__show_widget"
+      "mcp__visualize__show_widget",
+      "Bash(cat vite.config.js)",
+      "Bash(cat vite.config.ts)",
+      "Bash(npm list *)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\אביחי\\\\Documents\\\\runcoach-app\\\\public\" -ErrorAction SilentlyContinue; if \\(-not \\(Test-Path \"C:\\\\Users\\\\אביחי\\\\Documents\\\\runcoach-app\\\\public\"\\)\\) { \"folder does not exist\" })",
+      "Bash(node gen-icons.js)",
+      "PowerShell(Rename-Item \"C:\\\\Users\\\\�����\\\\Documents\\\\runcoach-app\\\\gen-icons.js\" \"gen-icons.cjs\")",
+      "Bash(node gen-icons.cjs)",
+      "mcp__0c550b18-475e-4cce-9693-432444e048bb__get_edge_function"
     ]
   }
 }

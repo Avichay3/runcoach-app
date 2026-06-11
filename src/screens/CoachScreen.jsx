@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { callCoach, buildSystemPrompt } from '../lib/coach'
@@ -93,7 +95,7 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
               {m.role === 'user' ? 'אני' : 'AI'}
             </div>
             <div style={{ ...styles.bubble, ...(m.role === 'user' ? styles.bubbleUser : styles.bubbleCoach) }}>
-              {m.content}
+              {m.role === 'user' ? m.content : <CoachMarkdown content={m.content} />}
             </div>
           </div>
         ))}
@@ -130,6 +132,41 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
     </div>
   )
 }
+
+function CoachMarkdown({ content }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ children }) => <p style={{ margin: '0 0 8px' }}>{children}</p>,
+        strong: ({ children }) => <strong style={{ fontWeight: 700, color: 'var(--text)' }}>{children}</strong>,
+        ul: ({ children }) => <ul style={{ margin: '4px 0 8px', paddingRight: 18, paddingLeft: 0 }}>{children}</ul>,
+        ol: ({ children }) => <ol style={{ margin: '4px 0 8px', paddingRight: 18, paddingLeft: 0 }}>{children}</ol>,
+        li: ({ children }) => <li style={{ marginBottom: 3 }}>{children}</li>,
+        h1: ({ children }) => <div style={mdHeading}>{children}</div>,
+        h2: ({ children }) => <div style={mdHeading}>{children}</div>,
+        h3: ({ children }) => <div style={mdHeading}>{children}</div>,
+        hr: () => <div style={{ height: 1, background: 'var(--border)', margin: '10px 0' }} />,
+        table: ({ children }) => (
+          <div style={{ overflowX: 'auto', margin: '6px 0 10px' }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13 }}>{children}</table>
+          </div>
+        ),
+        thead: ({ children }) => <thead>{children}</thead>,
+        th: ({ children }) => (
+          <th style={{ border: '1px solid var(--border)', padding: '5px 8px', background: 'var(--surface2)', fontWeight: 600, whiteSpace: 'nowrap', textAlign: 'right' }}>{children}</th>
+        ),
+        td: ({ children }) => (
+          <td style={{ border: '1px solid var(--border)', padding: '5px 8px', whiteSpace: 'nowrap', textAlign: 'right' }}>{children}</td>
+        ),
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  )
+}
+
+const mdHeading = { fontSize: 14, fontWeight: 700, margin: '8px 0 4px' }
 
 function dot(delay) {
   return {
@@ -181,7 +218,7 @@ const styles = {
     borderRadius: 14,
     fontSize: 14,
     lineHeight: 1.6,
-    whiteSpace: 'pre-wrap',
+    overflowWrap: 'anywhere',
   },
   bubbleCoach: {
     background: 'var(--surface)',
@@ -193,6 +230,7 @@ const styles = {
     color: '#fff',
     boxShadow: '0 2px 6px rgba(240,86,39,.25)',
     borderBottomRightRadius: 4,
+    whiteSpace: 'pre-wrap',
   },
   inputRow: {
     display: 'flex',
