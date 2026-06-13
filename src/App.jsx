@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from './context/AuthContext'
 import { useProfile } from './lib/useProfile'
 import { supabase } from './lib/supabase'
 import { weekKeyDate } from './lib/constants'
 import { exchangeStravaCode, syncStrava } from './lib/strava'
+import { runProactiveCheck } from './lib/proactive'
 import AuthScreen from './screens/AuthScreen'
 import DashboardScreen from './screens/DashboardScreen'
 import PlannerScreen from './screens/PlannerScreen'
@@ -70,10 +71,26 @@ export default function App() {
   const [pendingMessage, setPendingMessage] = useState(null)
   const [weeklyKm, setWeeklyKm] = useState(0)
   const [stravaToast, setStravaToast] = useState(null)
+  const [coachUnread, setCoachUnread] = useState(false)
+  const proactiveRan = useRef(false)
 
   useEffect(() => {
     if (session) loadWeeklyKm()
   }, [session, tab])
+
+  // Proactive coach: once per app load, let the coach post a weekly summary
+  useEffect(() => {
+    if (!session || !profile || proactiveRan.current) return
+    proactiveRan.current = true
+    runProactiveCheck({ user: session.user, profile, weeklyKm }).then(({ posted }) => {
+      if (posted) setCoachUnread(true)
+    })
+  }, [session, profile, weeklyKm])
+
+  // Clear the badge when the user opens the coach
+  useEffect(() => {
+    if (tab === 'coach') setCoachUnread(false)
+  }, [tab])
 
   // Handle the Strava OAuth redirect (?code=...&scope=...)
   useEffect(() => {
@@ -164,6 +181,7 @@ export default function App() {
           >
             <span style={{ ...styles.tabIcon, ...(tab === t.id ? styles.tabIconActive : {}) }}>
               {t.icon}
+              {t.id === 'coach' && coachUnread && <span style={styles.unreadDot} />}
             </span>
             <span style={styles.tabLabel}>{t.label}</span>
             {tab === t.id && <span style={styles.tabDot} />}
@@ -280,11 +298,23 @@ const styles = {
     color: 'var(--teal)',
   },
   tabIcon: {
+    position: 'relative',
+    display: 'inline-flex',
     opacity: .55,
     transition: 'opacity .15s',
   },
   tabIconActive: {
     opacity: 1,
+  },
+  unreadDot: {
+    position: 'absolute',
+    top: -3,
+    insetInlineEnd: -5,
+    width: 8,
+    height: 8,
+    borderRadius: '50%',
+    background: 'var(--red)',
+    border: '1.5px solid var(--surface)',
   },
   tabLabel: {
     fontSize: 11,
