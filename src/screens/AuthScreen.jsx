@@ -43,31 +43,16 @@ export default function AuthScreen() {
     <div style={styles.wrap}>
       {/* Hero section */}
       <div style={styles.hero}>
-        <div style={styles.logoRow}>
-          <div style={styles.logoIcon}>
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M13 4a1 1 0 1 0 2 0 1 1 0 0 0-2 0" />
-              <path d="M4 17l5 1l.75-1.5" />
-              <path d="M15 21l0-4l-4-3l1-6" />
-              <path d="M7 12l0-3l5-1l3 3l3 1" />
-            </svg>
-          </div>
-          <span style={styles.logoText}>RunCoach AI</span>
+        <div style={styles.logoIcon}>
+          <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M13 4a1 1 0 1 0 2 0 1 1 0 0 0-2 0" />
+            <path d="M4 17l5 1l.75-1.5" />
+            <path d="M15 21l0-4l-4-3l1-6" />
+            <path d="M7 12l0-3l5-1l3 3l3 1" />
+          </svg>
         </div>
-        <p style={styles.tagline}>המאמן האישי שמכיר אותך,<br />את הנתונים שלך, ואת הדרך ליעד.</p>
-
-        <div style={styles.statsRow}>
-          {[
-            { val: 'AI', label: 'מבוסס' },
-            { val: '24/7', label: 'זמין' },
-            { val: '100%', label: 'פרטי' },
-          ].map(s => (
-            <div key={s.val} style={styles.stat}>
-              <div style={styles.statVal}>{s.val}</div>
-              <div style={styles.statLabel}>{s.label}</div>
-            </div>
-          ))}
-        </div>
+        <h1 style={styles.title}>המאמן האישי שלך</h1>
+        <p style={styles.tagline}>מכיר אותך, את הנתונים שלך,<br />ואת הדרך ליעד.</p>
       </div>
 
       {/* Form card */}
@@ -104,7 +89,10 @@ export default function AuthScreen() {
         </form>
       </div>
 
-      <p style={styles.footer}>הנתונים שלך נשמרים באופן מאובטח ופרטי — רק אתה רואה אותם.</p>
+      <div style={styles.footer}>
+        <div style={styles.credit}>נבנה על ידי אביחי מזין וגדי עזרא</div>
+        <div style={styles.privacy}>הנתונים שלך נשמרים באופן מאובטח ופרטי — רק אתה רואה אותם.</div>
+      </div>
     </div>
   )
 }
@@ -125,54 +113,29 @@ const styles = {
     textAlign: 'center',
     marginBottom: 24,
   },
-  logoRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    justifyContent: 'center',
-    marginBottom: 14,
-  },
   logoIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 68,
+    height: 68,
+    borderRadius: 20,
     background: 'var(--teal)',
-    display: 'flex',
+    display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 4px 14px rgba(240,86,39,.40)',
+    boxShadow: '0 6px 20px rgba(240,86,39,.42)',
+    marginBottom: 18,
   },
-  logoText: {
-    fontSize: 26,
+  title: {
+    fontSize: 30,
     fontWeight: 800,
     letterSpacing: '-.03em',
     color: 'var(--text)',
+    lineHeight: 1.15,
+    marginBottom: 10,
   },
   tagline: {
     fontSize: 15,
     color: 'var(--text2)',
     lineHeight: 1.65,
-    marginBottom: 20,
-  },
-  statsRow: {
-    display: 'flex',
-    justifyContent: 'center',
-    gap: 28,
-  },
-  stat: {
-    textAlign: 'center',
-  },
-  statVal: {
-    fontSize: 18,
-    fontWeight: 700,
-    color: 'var(--teal)',
-    lineHeight: 1,
-  },
-  statLabel: {
-    fontSize: 11,
-    color: 'var(--text3)',
-    marginTop: 3,
-    fontWeight: 500,
   },
   card: {
     background: 'var(--surface)',
@@ -224,9 +187,18 @@ const styles = {
     marginBottom: 12,
   },
   footer: {
+    marginTop: 22,
+    textAlign: 'center',
+    maxWidth: 400,
+  },
+  credit: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: 'var(--text2)',
+    marginBottom: 6,
+  },
+  privacy: {
     fontSize: 12,
     color: 'var(--text3)',
-    marginTop: 20,
-    textAlign: 'center',
   },
 }

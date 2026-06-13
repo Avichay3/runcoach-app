@@ -1,4 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { supabase } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
+import { compressImage } from '../lib/image'
 import { startStravaAuth, syncStrava, stravaConfigured } from '../lib/strava'
 
 const FIELDS = [
@@ -18,6 +21,7 @@ const FIELDS = [
 ]
 
 export default function ProfileScreen({ profile, onSave }) {
+  const { user } = useAuth()
   const [form, setForm] = useState({})
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -48,6 +52,8 @@ export default function ProfileScreen({ profile, onSave }) {
 
   return (
     <div>
+      <AvatarCard profile={profile} user={user} onSave={onSave} />
+
       <StravaCard profile={profile} />
 
       <div className="card">
@@ -79,6 +85,81 @@ export default function ProfileScreen({ profile, onSave }) {
       </div>
     </div>
   )
+}
+
+function AvatarCard({ profile, user, onSave }) {
+  const [uploading, setUploading] = useState(false)
+  const fileRef = useRef(null)
+  const avatarUrl = profile?.avatar_url
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!file.type.startsWith('image/')) { alert('אפשר להעלות רק תמונות'); return }
+    setUploading(true)
+    try {
+      const blob = await compressImage(file, 512, 0.85)
+      const path = `${user.id}/avatar.jpg`
+      const { error } = await supabase.storage.from('avatars').upload(path, blob, {
+        contentType: 'image/jpeg',
+        upsert: true,
+      })
+      if (error) throw new Error(error.message)
+      const base = supabase.storage.from('avatars').getPublicUrl(path).data.publicUrl
+      await onSave({ avatar_url: `${base}?t=${Date.now()}` })  // cache-bust
+    } catch (err) {
+      alert('העלאת התמונה נכשלה: ' + err.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div style={av.card}>
+      <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
+      <button style={av.ring} onClick={() => fileRef.current?.click()} disabled={uploading} aria-label="שנה תמונת פרופיל">
+        {avatarUrl ? (
+          <img src={avatarUrl} alt="תמונת פרופיל" style={av.img} />
+        ) : (
+          <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="var(--text3)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" />
+          </svg>
+        )}
+        <span style={av.cam}>
+          {uploading ? (
+            <span className="spinner" style={{ width: 13, height: 13, borderTopColor: '#fff', borderColor: 'rgba(255,255,255,.4)' }} />
+          ) : (
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" />
+            </svg>
+          )}
+        </span>
+      </button>
+      <div style={av.name}>{user?.email}</div>
+      <div style={av.hint}>{avatarUrl ? 'לחץ על התמונה כדי להחליף' : 'לחץ כדי להוסיף תמונה'}</div>
+    </div>
+  )
+}
+
+const av = {
+  card: { background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '22px 18px', marginBottom: 14, boxShadow: 'var(--shadow-sm)', textAlign: 'center' },
+  ring: {
+    position: 'relative', width: 88, height: 88, borderRadius: '50%',
+    background: 'var(--surface2)', border: '2px solid var(--border2)',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    padding: 0, overflow: 'visible',
+  },
+  img: { width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' },
+  cam: {
+    position: 'absolute', bottom: -2, insetInlineEnd: -2,
+    width: 28, height: 28, borderRadius: '50%',
+    background: 'var(--teal)', border: '3px solid var(--surface)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    boxShadow: '0 2px 6px rgba(240,86,39,.35)',
+  },
+  name: { fontSize: 14, fontWeight: 600, marginTop: 12, color: 'var(--text)' },
+  hint: { fontSize: 12, color: 'var(--text3)', marginTop: 2 },
 }
 
 function StravaCard({ profile }) {
