@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { callCoach, buildSystemPrompt } from '../lib/coach'
+import { compressImage } from '../lib/image'
 
 export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsumePending }) {
   const { user } = useAuth()
@@ -12,7 +13,10 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [trainingHistory, setTrainingHistory] = useState([])
+  const [pendingImage, setPendingImage] = useState(null)   // File chosen, not yet sent
+  const [previewUrl, setPreviewUrl] = useState(null)        // object URL for the preview chip
   const boxRef = useRef(null)
+  const fileRef = useRef(null)
 
   useEffect(() => { loadHistory(); loadTrainingHistory() }, [user])
 
@@ -43,7 +47,7 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
       .from('chat_messages').select('*')
       .eq('user_id', user.id).order('created_at', { ascending: true }).limit(50)
     if (data && data.length) {
-      setMessages(data.map(m => ({ role: m.role, content: m.content })))
+      setMessages(data.map(m => ({ role: m.role, ...parseStored(m.content) })))
     } else {
       const greeting = profile?.goal
         ? `שלום! אני המאמן שלך. היעד שלנו: ${profile.goal} עד ${profile.target_date || 'התאריך שנקבע'}. דווח לי על אימון, שלח תוכנית, או שאל כל שאלה.`
@@ -54,23 +58,60 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
     setLoaded(true)
   }
 
-  async function persist(role, content) {
-    await supabase.from('chat_messages').insert({ user_id: user.id, role, content })
+  // Persist a message; if it carries an image we store JSON {t, img}
+  async function persist(role, content, image) {
+    const stored = image ? JSON.stringify({ t: content, img: image }) : content
+    await supabase.from('chat_messages').insert({ user_id: user.id, role, content: stored })
   }
 
-  async function send(text) {
-    const trimmed = text.trim()
-    if (!trimmed || loading) return
-    setInput('')
+  function pickImage(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!file.type.startsWith('image/')) { alert('אפשר להעלות רק תמונות'); return }
+    setPendingImage(file)
+    setPreviewUrl(URL.createObjectURL(file))
+  }
 
-    const userMsg = { role: 'user', content: trimmed }
+  function clearImage() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl)
+    setPendingImage(null)
+    setPreviewUrl(null)
+  }
+
+  async function uploadImage(file) {
+    const blob = await compressImage(file)
+    const path = `${user.id}/${crypto.randomUUID()}.jpg`
+    const { error } = await supabase.storage.from('coach-images').upload(path, blob, {
+      contentType: 'image/jpeg',
+    })
+    if (error) throw new Error(error.message)
+    return supabase.storage.from('coach-images').getPublicUrl(path).data.publicUrl
+  }
+
+  async function send(text, imageFile) {
+    const trimmed = (text || '').trim()
+    if ((!trimmed && !imageFile) || loading) return
+    setInput('')
+    clearImage()
+    setLoading(true)
+
+    let imageUrl = null
+    try {
+      if (imageFile) imageUrl = await uploadImage(imageFile)
+    } catch (err) {
+      setLoading(false)
+      alert('העלאת התמונה נכשלה: ' + err.message)
+      return
+    }
+
+    const userMsg = { role: 'user', content: trimmed, image: imageUrl }
     const next = [...messages, userMsg]
     setMessages(next)
-    await persist('user', trimmed)
+    await persist('user', trimmed, imageUrl)
 
-    setLoading(true)
     try {
-      const history = next.slice(-20).map(m => ({ role: m.role, content: m.content }))
+      const history = next.slice(-20).map((m, idx, arr) => buildApiMessage(m, idx === arr.length - 1))
       const reply = await callCoach(history, buildSystemPrompt(profile, weeklyKm, trainingHistory))
       setMessages(prev => [...prev, { role: 'assistant', content: reply }])
       await persist('assistant', reply)
@@ -83,8 +124,10 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
   }
 
   function handleKey(e) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input, pendingImage) }
   }
+
+  const canSend = !loading && (input.trim() || pendingImage)
 
   return (
     <div style={styles.wrap}>
@@ -95,7 +138,10 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
               {m.role === 'user' ? 'אני' : 'AI'}
             </div>
             <div style={{ ...styles.bubble, ...(m.role === 'user' ? styles.bubbleUser : styles.bubbleCoach) }}>
-              {m.role === 'user' ? m.content : <CoachMarkdown content={m.content} />}
+              {m.image && (
+                <img src={m.image} alt="תמונה" style={{ ...styles.msgImg, marginBottom: m.content ? 8 : 0 }} />
+              )}
+              {m.content && (m.role === 'user' ? m.content : <CoachMarkdown content={m.content} />)}
             </div>
           </div>
         ))}
@@ -114,7 +160,23 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
         )}
       </div>
 
+      {previewUrl && (
+        <div style={styles.previewRow}>
+          <div style={styles.previewChip}>
+            <img src={previewUrl} alt="תצוגה מקדימה" style={styles.previewImg} />
+            <button onClick={clearImage} style={styles.previewX} aria-label="הסר תמונה">×</button>
+          </div>
+          <span style={{ fontSize: 12, color: 'var(--text3)' }}>תמונה מצורפת</span>
+        </div>
+      )}
+
       <div style={styles.inputRow}>
+        <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={pickImage} />
+        <button style={styles.attachBtn} onClick={() => fileRef.current?.click()} disabled={loading} aria-label="צרף תמונה">
+          <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2.5" y="3.5" width="15" height="13" rx="2.5" /><circle cx="7" cy="8" r="1.5" /><path d="M3 14l4-4 3 3 3-4 4 5" />
+          </svg>
+        </button>
         <textarea
           style={styles.textarea}
           rows={1}
@@ -123,7 +185,7 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
           onKeyDown={handleKey}
           placeholder="כתוב למאמן..."
         />
-        <button style={{ ...styles.sendBtn, ...(loading || !input.trim() ? styles.sendBtnDisabled : {}) }} onClick={() => send(input)} disabled={loading || !input.trim()} aria-label="שלח">
+        <button style={{ ...styles.sendBtn, ...(canSend ? {} : styles.sendBtnDisabled) }} onClick={() => send(input, pendingImage)} disabled={!canSend} aria-label="שלח">
           <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M10 17V4M4 10l6-6 6 6" />
           </svg>
@@ -131,6 +193,29 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
       </div>
     </div>
   )
+}
+
+// chat_messages.content is either plain text or JSON {t, img}
+function parseStored(content) {
+  if (typeof content === 'string' && content.startsWith('{') && content.includes('"img"')) {
+    try {
+      const o = JSON.parse(content)
+      if (o && o.img) return { content: o.t || '', image: o.img }
+    } catch { /* fall through to plain text */ }
+  }
+  return { content, image: null }
+}
+
+// Convert a stored message to Anthropic format. Only the latest message
+// carries its image (keeps cost down; past images stay as text placeholders).
+function buildApiMessage(m, isLast) {
+  if (m.image && isLast) {
+    const blocks = [{ type: 'image', source: { type: 'url', url: m.image } }]
+    if (m.content) blocks.push({ type: 'text', text: m.content })
+    return { role: m.role, content: blocks }
+  }
+  const text = m.content || (m.image ? '[תמונה ששלחתי]' : '')
+  return { role: m.role, content: text }
 }
 
 function CoachMarkdown({ content }) {
@@ -344,6 +429,52 @@ const styles = {
     boxShadow: 'none',
   },
   dots: { display: 'flex', gap: 5, alignItems: 'center', padding: '2px 0' },
+  msgImg: {
+    maxWidth: '100%',
+    maxHeight: 280,
+    borderRadius: 10,
+    display: 'block',
+    objectFit: 'cover',
+  },
+  attachBtn: {
+    width: 42, height: 42,
+    borderRadius: '50%',
+    background: 'var(--surface)',
+    border: '1.5px solid var(--border2)',
+    color: 'var(--text2)',
+    flexShrink: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    boxShadow: 'var(--shadow-sm)',
+  },
+  previewRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    paddingTop: 10,
+  },
+  previewChip: {
+    position: 'relative',
+    width: 56, height: 56,
+    flexShrink: 0,
+  },
+  previewImg: {
+    width: 56, height: 56,
+    borderRadius: 10,
+    objectFit: 'cover',
+    border: '1.5px solid var(--border2)',
+  },
+  previewX: {
+    position: 'absolute',
+    top: -7, insetInlineStart: -7,
+    width: 20, height: 20,
+    borderRadius: '50%',
+    background: 'var(--text)',
+    color: 'var(--surface)',
+    border: 'none',
+    fontSize: 14,
+    lineHeight: '20px',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
   dayCard: {
     display: 'flex',
     gap: 10,
