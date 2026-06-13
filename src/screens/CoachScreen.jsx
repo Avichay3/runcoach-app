@@ -6,6 +6,11 @@ import { useAuth } from '../context/AuthContext'
 import { callCoach, buildSystemPrompt } from '../lib/coach'
 import { compressImage } from '../lib/image'
 
+// How many recent messages to send to the coach for conversational context.
+// Set high so the coach effectively remembers the whole relationship; the
+// factual training history is always in the system prompt regardless.
+const CONTEXT_MESSAGES = 200
+
 export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsumePending }) {
   const { user } = useAuth()
   const [messages, setMessages] = useState([])
@@ -45,7 +50,7 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
     if (!user) return
     const { data } = await supabase
       .from('chat_messages').select('*')
-      .eq('user_id', user.id).order('created_at', { ascending: true }).limit(50)
+      .eq('user_id', user.id).order('created_at', { ascending: true })
     if (data && data.length) {
       setMessages(data.map(m => ({ role: m.role, ...parseStored(m.content) })))
     } else {
@@ -111,7 +116,7 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
     await persist('user', trimmed, imageUrl)
 
     try {
-      const history = next.slice(-20).map((m, idx, arr) => buildApiMessage(m, idx === arr.length - 1))
+      const history = next.slice(-CONTEXT_MESSAGES).map((m, idx, arr) => buildApiMessage(m, idx === arr.length - 1))
       const reply = await callCoach(history, buildSystemPrompt(profile, weeklyKm, trainingHistory))
       setMessages(prev => [...prev, { role: 'assistant', content: reply }])
       await persist('assistant', reply)
