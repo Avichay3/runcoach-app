@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 
 export default function AuthScreen() {
   const [mode, setMode] = useState('login')
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(() => localStorage.getItem('runcoach_email') || '')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -16,11 +16,13 @@ export default function AuthScreen() {
       if (mode === 'signup') {
         const { error } = await supabase.auth.signUp({ email, password })
         if (error) throw error
+        localStorage.setItem('runcoach_email', email)
         setInfo('נרשמת בהצלחה! אם נדרש אימות מייל, בדוק את תיבת הדואר. אחרת אפשר להתחבר.')
         setMode('login')
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) throw error
+        localStorage.setItem('runcoach_email', email)
       }
     } catch (err) {
       setError(translateError(err.message))
@@ -82,12 +84,15 @@ export default function AuthScreen() {
 
         <form onSubmit={handleSubmit}>
           <div className="field" style={{ marginBottom: 12 }}>
-            <label>אימייל</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" required dir="ltr" />
+            <label htmlFor="email">אימייל</label>
+            <input id="email" name="email" type="email" autoComplete="username"
+              value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" required dir="ltr" />
           </div>
           <div className="field" style={{ marginBottom: 16 }}>
-            <label>סיסמה</label>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="לפחות 6 תווים" required dir="ltr" />
+            <label htmlFor="password">סיסמה</label>
+            <input id="password" name="password" type="password"
+              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+              value={password} onChange={e => setPassword(e.target.value)} placeholder="לפחות 6 תווים" required dir="ltr" />
           </div>
 
           {error && <div style={styles.msgError}>{error}</div>}
