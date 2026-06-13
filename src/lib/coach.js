@@ -23,8 +23,26 @@ export async function callCoach(messages, systemPrompt) {
   return data.reply
 }
 
+// Update the coach's long-term memory after an exchange. Returns new memory text.
+export async function updateCoachMemory(memory, exchange) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('not authenticated')
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/coach-memory`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ memory: memory || '', exchange }),
+  })
+  if (!res.ok) throw new Error('memory update failed')
+  const data = await res.json()
+  return data.memory || memory || ''
+}
+
 // trainingHistory = array of daily_updates rows, all time
-export function buildSystemPrompt(profile, weeklyKm, trainingHistory = []) {
+export function buildSystemPrompt(profile, weeklyKm, trainingHistory = [], coachMemory = '') {
   if (!profile) {
     return `אתה מאמן ריצה אישי ברמה עולמית. כתוב ONLY בעברית. היה ישיר, תכליתי, מקצועי.`
   }
@@ -33,9 +51,12 @@ export function buildSystemPrompt(profile, weeklyKm, trainingHistory = []) {
   const paceZones = pb5k ? derivePaceZones(pb5k) : null
   const longRunPace = pb5k ? deriveLongRunPace(pb5k) : null
   const historySection = trainingHistory.length ? buildHistorySection(trainingHistory) : ''
+  const memorySection = coachMemory && coachMemory.trim()
+    ? `\n━━ זיכרון ארוך-טווח (דברים חשובים שאסור לשכוח) ━━\n${coachMemory.trim()}\n`
+    : ''
 
   return `אתה מאמן ריצה אישי ברמה עולמית. 20+ שנות ניסיון. הגישה שלך: Jack Daniels, Hal Higdon, Matt Fitzgerald. כתוב ONLY בעברית.
-
+${memorySection}
 ━━ הספורטאי שלך ━━
 ${profile.gender || '—'}, גיל ${profile.age || '—'}, ${profile.weight || '—'}ק"ג | ניסיון: ${profile.experience || '—'}
 נפח: ${profile.weekly_km || '—'}ק"מ/שבוע, ${profile.runs_per_week || '—'} ריצות/שבוע | זמינות: ${profile.availability || '—'} שעות/שבוע

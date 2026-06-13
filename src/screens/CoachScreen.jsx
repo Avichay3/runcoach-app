@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { callCoach, buildSystemPrompt } from '../lib/coach'
+import { callCoach, buildSystemPrompt, updateCoachMemory } from '../lib/coach'
 import { compressImage } from '../lib/image'
 
 // How many recent messages to send to the coach for conversational context.
@@ -20,8 +20,11 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
   const [trainingHistory, setTrainingHistory] = useState([])
   const [pendingImage, setPendingImage] = useState(null)   // File chosen, not yet sent
   const [previewUrl, setPreviewUrl] = useState(null)        // object URL for the preview chip
+  const [coachMemory, setCoachMemory] = useState('')        // long-term notebook
   const boxRef = useRef(null)
   const fileRef = useRef(null)
+
+  useEffect(() => { setCoachMemory(profile?.coach_memory || '') }, [profile])
 
   useEffect(() => { loadHistory(); loadTrainingHistory() }, [user])
 
@@ -117,15 +120,28 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
 
     try {
       const history = next.slice(-CONTEXT_MESSAGES).map((m, idx, arr) => buildApiMessage(m, idx === arr.length - 1))
-      const reply = await callCoach(history, buildSystemPrompt(profile, weeklyKm, trainingHistory))
+      const reply = await callCoach(history, buildSystemPrompt(profile, weeklyKm, trainingHistory, coachMemory))
       setMessages(prev => [...prev, { role: 'assistant', content: reply }])
       await persist('assistant', reply)
+      refreshMemory(trimmed || '[תמונה]', reply)
     } catch {
       const errMsg = 'מצטער, הייתה שגיאה בחיבור למאמן. נסה שוב בעוד רגע.'
       setMessages(prev => [...prev, { role: 'assistant', content: errMsg }])
     } finally {
       setLoading(false)
     }
+  }
+
+  // Update the long-term notebook in the background (never blocks the chat)
+  async function refreshMemory(userText, reply) {
+    try {
+      const exchange = `הספורטאי: ${userText}\nהמאמן: ${reply}`
+      const updated = await updateCoachMemory(coachMemory, exchange)
+      if (updated && updated !== coachMemory) {
+        setCoachMemory(updated)
+        await supabase.from('profiles').update({ coach_memory: updated }).eq('id', user.id)
+      }
+    } catch { /* memory is best-effort; ignore failures */ }
   }
 
   function handleKey(e) {
