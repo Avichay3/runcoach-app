@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { goalToText } from './constants'
 
 export async function callCoach(messages, systemPrompt) {
   const { data: { session } } = await supabase.auth.getSession()
@@ -61,7 +62,7 @@ ${memorySection}
 ${profile.gender || '—'}, גיל ${profile.age || '—'}, ${profile.weight || '—'}ק"ג | ניסיון: ${profile.experience || '—'}
 נפח: ${profile.weekly_km || '—'}ק"מ/שבוע, ${profile.runs_per_week || '—'} ריצות/שבוע | זמינות: ${profile.availability || '—'} שעות/שבוע
 שיאים: 5K ${profile.pb_5k || '—'} | 10K ${profile.pb_10k || '—'} | ריצה ארוכה ${profile.long_run || '—'}ק"מ
-יעד: ${profile.goal || '—'} עד ${profile.target_date || '—'} | פציעות: ${profile.injuries || 'אין'}
+יעד: ${goalToText(profile.goal) || '—'} עד ${profile.target_date || '—'} | פציעות: ${profile.injuries || 'אין'}
 ק"מ השבוע עד כה: ${weeklyKm} / ${profile.weekly_km || '?'}
 ${paceZones ? `
 ━━ אזורי קצב (מחושב מ-5K ${profile.pb_5k}) ━━

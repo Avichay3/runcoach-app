@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { compressImage } from '../lib/image'
 import { startStravaAuth, syncStrava, stravaConfigured } from '../lib/strava'
 
-const FIELDS = [
+const FIELDS_TOP = [
   { id: 'age', label: 'גיל', type: 'number', placeholder: '34' },
   { id: 'gender', label: 'מין', type: 'select', options: ['גבר', 'אישה', 'אחר'] },
   { id: 'weight', label: 'משקל (ק"ג)', type: 'number', placeholder: '80' },
@@ -15,10 +15,24 @@ const FIELDS = [
   { id: 'pb_10k', label: 'שיא 10K (מ:ש)', type: 'text', placeholder: '46:00' },
   { id: 'long_run', label: 'ריצה ארוכה (ק"מ)', type: 'number', placeholder: '16' },
   { id: 'availability', label: 'זמינות שבועית (שעות)', type: 'number', placeholder: '8' },
-  { id: 'goal', label: 'יעד עיקרי', type: 'select', options: ['Sub-18 ב-5K', 'Sub-40 ב-10K', 'חצי מרתון', 'מרתון', 'ירידה במשקל', 'כושר כללי'] },
-  { id: 'target_date', label: 'תאריך יעד', type: 'date' },
+]
+
+const FIELDS_BOTTOM = [
   { id: 'injuries', label: 'פציעות / מגבלות', type: 'textarea', full: true, placeholder: 'השאר ריק אם אין' },
 ]
+
+const NUMERIC_IDS = new Set(['age', 'weight', 'weekly_km', 'runs_per_week', 'long_run', 'availability'])
+const GOAL_DISTANCES = ['5K', '10K', 'חצי מרתון', 'מרתון']
+const GOAL_PLACEHOLDERS = { '5K': '22:00', '10K': '46:00', 'חצי מרתון': '1:50:00', 'מרתון': '3:45:00' }
+
+function parseGoalJson(str) {
+  if (!str) return { type: 'free', text: '', distance: '5K', targetTime: '' }
+  try {
+    const g = JSON.parse(str)
+    if (g.type) return { type: 'free', text: '', distance: '5K', targetTime: '', ...g }
+  } catch {}
+  return { type: 'free', text: str, distance: '5K', targetTime: '' }
+}
 
 export default function ProfileScreen({ profile, onSave }) {
   const { user } = useAuth()
@@ -29,7 +43,9 @@ export default function ProfileScreen({ profile, onSave }) {
   useEffect(() => {
     if (profile) {
       const f = {}
-      FIELDS.forEach(fl => { f[fl.id] = profile[fl.id] ?? '' })
+      ;[...FIELDS_TOP, ...FIELDS_BOTTOM].forEach(fl => { f[fl.id] = profile[fl.id] ?? '' })
+      f.goal = profile.goal ?? ''
+      f.target_date = profile.target_date ?? ''
       setForm(f)
     }
   }, [profile])
@@ -39,12 +55,14 @@ export default function ProfileScreen({ profile, onSave }) {
   async function handleSave() {
     setSaving(true)
     const payload = {}
-    FIELDS.forEach(fl => {
+    ;[...FIELDS_TOP, ...FIELDS_BOTTOM].forEach(fl => {
       let v = form[fl.id]
       if (v === '') v = null
-      if (['age', 'weight', 'weekly_km', 'runs_per_week', 'long_run', 'availability'].includes(fl.id) && v != null) v = Number(v)
+      if (NUMERIC_IDS.has(fl.id) && v != null) v = Number(v)
       payload[fl.id] = v
     })
+    payload.goal = form.goal || null
+    payload.target_date = form.target_date || null
     const { error } = await onSave(payload)
     setSaving(false)
     if (!error) { setSaved(true); setTimeout(() => setSaved(false), 2500) }
@@ -53,26 +71,37 @@ export default function ProfileScreen({ profile, onSave }) {
   return (
     <div>
       <AvatarCard profile={profile} user={user} onSave={onSave} />
-
       <StravaCard profile={profile} />
 
       <div className="card">
         <div className="card-title">פרופיל המתאמן</div>
         <div className="card-sub">הנתונים נשמרים פעם אחת ומשמשים את המאמן בכל שיחה — כך הוא מכיר אותך והייעוץ מדויק.</div>
         <div className="fields">
-          {FIELDS.map(fl => (
-            <div key={fl.id} className={fl.full ? 'field full' : 'field'}>
+          {FIELDS_TOP.map(fl => (
+            <div key={fl.id} className="field">
               <label>{fl.label}</label>
               {fl.type === 'select' ? (
                 <select value={form[fl.id] || ''} onChange={e => set(fl.id, e.target.value)}>
                   <option value="">בחר...</option>
                   {fl.options.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
-              ) : fl.type === 'textarea' ? (
-                <textarea rows={2} value={form[fl.id] || ''} onChange={e => set(fl.id, e.target.value)} placeholder={fl.placeholder} />
               ) : (
                 <input type={fl.type} value={form[fl.id] || ''} onChange={e => set(fl.id, e.target.value)} placeholder={fl.placeholder} />
               )}
+            </div>
+          ))}
+
+          <GoalEditor
+            value={form.goal || ''}
+            dateValue={form.target_date || ''}
+            onGoalChange={v => set('goal', v)}
+            onDateChange={v => set('target_date', v)}
+          />
+
+          {FIELDS_BOTTOM.map(fl => (
+            <div key={fl.id} className="field full">
+              <label>{fl.label}</label>
+              <textarea rows={2} value={form[fl.id] || ''} onChange={e => set(fl.id, e.target.value)} placeholder={fl.placeholder} />
             </div>
           ))}
         </div>
@@ -82,6 +111,112 @@ export default function ProfileScreen({ profile, onSave }) {
             {saving ? <span className="spinner" /> : 'שמור פרופיל'}
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function GoalEditor({ value, dateValue, onGoalChange, onDateChange }) {
+  const g = parseGoalJson(value)
+
+  function upd(patch) {
+    onGoalChange(JSON.stringify({ ...g, ...patch }))
+  }
+
+  const showDist = g.type === 'distance' || g.type === 'both'
+  const showText = g.type === 'free' || g.type === 'both'
+
+  const typeOpts = [
+    { id: 'free', label: 'מלל חופשי' },
+    { id: 'distance', label: 'שיפור תוצאה' },
+    { id: 'both', label: 'שניהם' },
+  ]
+
+  return (
+    <div className="field full">
+      <label>יעד עיקרי</label>
+
+      {/* Goal type toggle */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+        {typeOpts.map(opt => (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => upd({ type: opt.id })}
+            style={{
+              flex: 1, padding: '8px 4px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1.5px solid',
+              borderColor: g.type === opt.id ? 'var(--teal)' : 'var(--border)',
+              background: g.type === opt.id ? 'var(--teal-l)' : 'var(--surface2)',
+              color: g.type === opt.id ? 'var(--teal-d)' : 'var(--text2)',
+              fontSize: 13, fontWeight: g.type === opt.id ? 700 : 500, cursor: 'pointer',
+            }}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {showDist && (
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 12.5, marginBottom: 5, display: 'block' }}>מרחק יעד</label>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {GOAL_DISTANCES.map(d => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => upd({ distance: d })}
+                style={{
+                  flex: 1, padding: '7px 2px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1.5px solid',
+                  borderColor: g.distance === d ? 'var(--teal)' : 'var(--border)',
+                  background: g.distance === d ? 'var(--teal-l)' : 'var(--surface2)',
+                  color: g.distance === d ? 'var(--teal-d)' : 'var(--text2)',
+                  fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                {d}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showDist && (
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 12.5, marginBottom: 5, display: 'block' }}>זמן יעד</label>
+          <input
+            type="text"
+            value={g.targetTime || ''}
+            onChange={e => upd({ targetTime: e.target.value })}
+            placeholder={GOAL_PLACEHOLDERS[g.distance] || '22:00'}
+          />
+        </div>
+      )}
+
+      {showText && (
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 12.5, marginBottom: 5, display: 'block' }}>
+            {g.type === 'both' ? 'פרטים נוספים' : 'תאר את היעד שלך'}
+          </label>
+          <textarea
+            rows={2}
+            value={g.text || ''}
+            onChange={e => upd({ text: e.target.value })}
+            placeholder='לדוגמה: לסיים חצי מרתון ראשון בתל אביב'
+          />
+        </div>
+      )}
+
+      <div>
+        <label style={{ fontSize: 12.5, marginBottom: 5, display: 'block' }}>תאריך יעד</label>
+        <input
+          type="date"
+          value={dateValue || ''}
+          onChange={e => onDateChange(e.target.value)}
+        />
       </div>
     </div>
   )
@@ -107,7 +242,7 @@ function AvatarCard({ profile, user, onSave }) {
       })
       if (error) throw new Error(error.message)
       const base = supabase.storage.from('avatars').getPublicUrl(path).data.publicUrl
-      await onSave({ avatar_url: `${base}?t=${Date.now()}` })  // cache-bust
+      await onSave({ avatar_url: `${base}?t=${Date.now()}` })
     } catch (err) {
       alert('העלאת התמונה נכשלה: ' + err.message)
     } finally {

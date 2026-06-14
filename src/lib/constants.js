@@ -12,6 +12,20 @@ export const WORKOUT_TYPES = {
 export const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
 export const FEEL_LABELS = ['', 'גרוע', 'קשה', 'סביר', 'טוב', 'מעולה']
 
+// Convert a goal value (JSON string or legacy string) to human-readable text
+export function goalToText(goalStr) {
+  if (!goalStr) return null
+  try {
+    const g = JSON.parse(goalStr)
+    if (!g.type) return goalStr
+    if (g.type === 'free') return g.text || ''
+    const distPart = g.distance && g.targetTime ? `שיפור ${g.distance} → ${g.targetTime}` : g.distance ? `${g.distance}` : ''
+    if (g.type === 'distance') return distPart
+    return g.text ? `${distPart} · ${g.text}` : distPart
+  } catch {}
+  return goalStr
+}
+
 export function weekKeyDate(offset = 0) {
   const d = new Date()
   d.setDate(d.getDate() - d.getDay() + offset * 7)

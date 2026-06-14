@@ -5,7 +5,7 @@ import {
 } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { weekKeyDate, FEEL_LABELS } from '../lib/constants'
+import { weekKeyDate, FEEL_LABELS, goalToText } from '../lib/constants'
 
 const CHART_WEEKS = 8
 
@@ -96,7 +96,7 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
           colorL="var(--teal-l)"
           label="שיא 5K"
           val={profile.pb_5k || '—'}
-          sub={`יעד: ${profile.goal}`}
+          sub={`יעד: ${goalToText(profile.goal) || '—'}`}
         />
         <Kpi
           icon={<RouteIcon />}
@@ -129,7 +129,7 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
         <div className="section-label">המטרה שלי</div>
         <div style={styles.goalHead}>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 700 }}>{profile.goal}</div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>{goalToText(profile.goal) || profile.goal}</div>
             {profile.target_date && (
               <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
                 {daysToGoal} ימים נותרו · {profile.target_date.slice(0, 10)}
@@ -239,7 +239,7 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
         <button
           className="btn btn-block"
           style={styles.askBtn}
-          onClick={() => onAsk(`לפי הנתונים שלי, האם אני על מסלול ליעד ${profile.goal}? מה כדאי לשנות?`)}
+          onClick={() => onAsk(`לפי הנתונים שלי, האם אני על מסלול ליעד ${goalToText(profile.goal) || profile.goal}? מה כדאי לשנות?`)}
         >
           <span>האם אני על המסלול ליעד?</span>
           <span style={{ color: 'var(--teal)', fontSize: 16 }}>↗</span>
@@ -257,40 +257,57 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
   )
 }
 
-// Parse the goal into a measurable progress where possible.
-// Handles "Sub-18 ב-5K" / "Sub-40 ב-10K" against the matching PB.
 function computeGoalProgress(profile) {
-  const goal = profile.goal || ''
+  const goalStr = profile.goal || ''
+
   const timePct = (() => {
     if (!profile.target_date) return 0
     const end = new Date(profile.target_date)
-    const start = new Date(end); start.setDate(start.getDate() - 90) // assume ~12-week horizon
+    const start = new Date(end); start.setDate(start.getDate() - 90)
     const total = end - start
     const done = new Date() - start
     return Math.max(0, Math.min(100, Math.round((done / total) * 100)))
   })()
 
-  const m = goal.match(/sub[\s-]?(\d+)/i)
-  const dist = /10k/i.test(goal) ? '10k' : /5k/i.test(goal) ? '5k' : null
-  const pb = dist === '10k' ? profile.pb_10k : dist === '5k' ? profile.pb_5k : null
+  let targetSec = null
+  let distKey = null  // '5k' | '10k'
 
-  if (m && dist && pb) {
-    const targetMin = Number(m[1])
-    const targetSec = targetMin * 60
+  try {
+    const g = JSON.parse(goalStr)
+    if ((g.type === 'distance' || g.type === 'both') && g.targetTime && g.distance) {
+      if (g.distance === '5K') distKey = '5k'
+      else if (g.distance === '10K') distKey = '10k'
+      if (distKey) {
+        const parts = g.targetTime.split(':').map(Number)
+        if (!parts.some(isNaN)) {
+          if (parts.length === 3) targetSec = parts[0] * 3600 + parts[1] * 60 + parts[2]
+          else if (parts.length === 2) targetSec = parts[0] * 60 + parts[1]
+        }
+      }
+    }
+  } catch {
+    // Legacy: "Sub-18 ב-5K"
+    const m = goalStr.match(/sub[\s-]?(\d+)/i)
+    distKey = /10k/i.test(goalStr) ? '10k' : /5k/i.test(goalStr) ? '5k' : null
+    if (m && distKey) targetSec = Number(m[1]) * 60
+  }
+
+  const pb = distKey === '10k' ? profile.pb_10k : distKey === '5k' ? profile.pb_5k : null
+
+  if (targetSec && distKey && pb) {
     const currentSec = pbToSec(pb)
     if (currentSec) {
       const reached = currentSec <= targetSec
       const gap = currentSec - targetSec
-      // Progress: assume a realistic starting point 12% slower than target
       const startSec = targetSec * 1.12
       const pct = Math.max(0, Math.min(100, Math.round(((startSec - currentSec) / (startSec - targetSec)) * 100)))
       return {
         hasMetric: true, reached,
         currentLabel: pb,
-        targetLabel: `${targetMin}:00`,
-        gapLabel: reached ? '✓' : `${secToMs(gap)}`,
+        targetLabel: secToLabel(targetSec),
+        gapLabel: reached ? '✓' : secToMs(gap),
         pct: reached ? 100 : pct,
-        hint: reached ? 'הגעת ליעד הזמן! 🎉' : `צריך לשפר ${secToMs(gap)} ב-${dist.toUpperCase()}`,
+        hint: reached ? 'הגעת ליעד הזמן! 🎉' : `צריך לשפר ${secToMs(gap)} ב-${distKey.toUpperCase()}`,
         timePct,
       }
     }
@@ -300,9 +317,23 @@ function computeGoalProgress(profile) {
 
 function pbToSec(pb) {
   if (!pb) return null
-  const [m, s] = pb.split(':').map(Number)
-  if (isNaN(m) || isNaN(s)) return null
-  return m * 60 + s
+  const parts = pb.split(':').map(Number)
+  if (parts.some(isNaN)) return null
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]
+  if (parts.length === 2) return parts[0] * 60 + parts[1]
+  return null
+}
+function secToLabel(sec) {
+  const a = Math.round(sec)
+  if (a >= 3600) {
+    const h = Math.floor(a / 3600)
+    const m = Math.floor((a % 3600) / 60)
+    const s = a % 60
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
+  const m = Math.floor(a / 60)
+  const s = a % 60
+  return `${m}:${String(s).padStart(2, '0')}`
 }
 function secToMs(sec) {
   const a = Math.abs(Math.round(sec))
