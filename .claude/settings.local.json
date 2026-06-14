@@ -25,7 +25,18 @@
       "Bash(node gen-icons.js)",
       "PowerShell(Rename-Item \"C:\\\\Users\\\\�����\\\\Documents\\\\runcoach-app\\\\gen-icons.js\" \"gen-icons.cjs\")",
       "Bash(node gen-icons.cjs)",
-      "mcp__0c550b18-475e-4cce-9693-432444e048bb__get_edge_function"
+      "mcp__0c550b18-475e-4cce-9693-432444e048bb__get_edge_function",
+      "mcp__0c550b18-475e-4cce-9693-432444e048bb__execute_sql",
+      "Bash(node -e ' *)",
+      "mcp__0c550b18-475e-4cce-9693-432444e048bb__list_tables",
+      "mcp__0c550b18-475e-4cce-9693-432444e048bb__apply_migration",
+      "mcp__0c550b18-475e-4cce-9693-432444e048bb__deploy_edge_function",
+      "Bash(git check-ignore *)",
+      "Read(//mnt/c/Users/אביחי/Documents/**)",
+      "Bash(vercel --version)",
+      "Bash(npx supabase *)",
+      "mcp__0c550b18-475e-4cce-9693-432444e048bb__list_edge_functions",
+      "Bash(git rm *)"
     ]
   }
 }

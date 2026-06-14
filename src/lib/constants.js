@@ -10,7 +10,6 @@ export const WORKOUT_TYPES = {
 }
 
 export const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
-export const REST_DEFAULT = [6]
 export const FEEL_LABELS = ['', 'גרוע', 'קשה', 'סביר', 'טוב', 'מעולה']
 
 export function weekKeyDate(offset = 0) {

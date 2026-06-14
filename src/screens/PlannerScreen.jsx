@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { WORKOUT_TYPES, DAYS_HE, REST_DEFAULT, weekKeyDate, weekDates } from '../lib/constants'
+import { WORKOUT_TYPES, DAYS_HE, weekKeyDate, weekDates } from '../lib/constants'
 
 export default function PlannerScreen({ profile, onSendToCoach }) {
   const { user } = useAuth()
@@ -47,6 +47,14 @@ export default function PlannerScreen({ profile, onSendToCoach }) {
     if (data) setWorkouts(prev => [...prev, data])
   }
 
+  async function updateWorkout(id, w) {
+    const { data } = await supabase.from('workouts').update({
+      type: w.type, distance_km: w.km ? Number(w.km) : null,
+      duration_min: w.mins ? Number(w.mins) : null, note: w.note || null,
+    }).eq('id', id).select().single()
+    if (data) setWorkouts(prev => prev.map(x => x.id === id ? data : x))
+  }
+
   async function removeWorkout(id) {
     await supabase.from('workouts').delete().eq('id', id)
     setWorkouts(prev => prev.filter(w => w.id !== id))
@@ -68,11 +76,10 @@ export default function PlannerScreen({ profile, onSendToCoach }) {
 
   function sendToCoach() {
     const lines = DAYS_HE.map((name, i) => {
-      if (REST_DEFAULT.includes(i)) return `${name}: מנוחה`
       const ws = byDay(i)
-      if (!ws.length) return `${name}: ריק`
+      if (!ws.length) return `${name}: מנוחה`
       return `${name}: ` + ws.map(w => {
-        const t = WORKOUT_TYPES[w.type].label
+        const t = (WORKOUT_TYPES[w.type] || WORKOUT_TYPES.easy).label
         return t + (w.distance_km ? ` ${w.distance_km}ק"מ` : '') + (w.duration_min ? ` ${w.duration_min}ד` : '') + (w.note ? ` (${w.note})` : '')
       }).join(' + ')
     }).join('\n')
@@ -98,35 +105,30 @@ export default function PlannerScreen({ profile, onSendToCoach }) {
 
       <div style={styles.grid}>
         {dates.map((date, i) => {
-          const rest = REST_DEFAULT.includes(i)
           return (
             <div key={i} style={styles.col}>
               <div style={styles.dayHead}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)' }}>{DAYS_HE[i]}</div>
                 <div style={{ fontSize: 11, color: 'var(--text3)' }}>{fmt(date)}</div>
               </div>
-              <div style={{ ...styles.drop, ...(rest ? styles.dropRest : {}) }}>
-                {rest ? (
-                  <div style={{ fontSize: 11, color: 'var(--text3)', textAlign: 'center', padding: '14px 0' }}>מנוחה</div>
-                ) : (
-                  <>
-                    {byDay(i).map(w => {
-                      const t = WORKOUT_TYPES[w.type] || WORKOUT_TYPES.easy
-                      return (
-                        <div key={w.id} style={{ ...styles.wkt, background: t.bg, color: t.text, border: `0.5px solid ${t.border}`, opacity: w.completed ? .55 : 1 }}>
-                          <button style={styles.wktX} onClick={() => removeWorkout(w.id)} aria-label="הסר">✕</button>
-                          <div style={{ fontWeight: 600, marginBottom: 2 }}>{t.label}</div>
-                          <div style={{ opacity: .85, lineHeight: 1.35 }}>
-                            {w.distance_km ? `${w.distance_km}ק"מ` : ''}{w.distance_km && w.duration_min ? ' · ' : ''}{w.duration_min ? `${w.duration_min}ד` : ''}
-                            {w.note ? <><br />{w.note}</> : ''}
-                          </div>
-                          <button style={styles.wktCheck} onClick={() => toggleDone(w)} aria-label="בוצע">{w.completed ? '↩' : '✓'}</button>
+              <div style={styles.drop}>
+                {byDay(i).map(w => {
+                  const t = WORKOUT_TYPES[w.type] || WORKOUT_TYPES.easy
+                  return (
+                    <div key={w.id} style={{ ...styles.wkt, background: t.bg, color: t.text, border: `0.5px solid ${t.border}`, opacity: w.completed ? .55 : 1 }}>
+                      <button style={styles.wktX} onClick={() => removeWorkout(w.id)} aria-label="הסר">✕</button>
+                      <button style={styles.wktBody} onClick={() => setModal({ day: i, workout: w })} aria-label="ערוך אימון">
+                        <div style={{ fontWeight: 600, marginBottom: 2 }}>{t.label}</div>
+                        <div style={{ opacity: .85, lineHeight: 1.35 }}>
+                          {w.distance_km ? `${w.distance_km}ק"מ` : ''}{w.distance_km && w.duration_min ? ' · ' : ''}{w.duration_min ? `${w.duration_min}ד` : ''}
+                          {w.note ? <><br />{w.note}</> : ''}
                         </div>
-                      )
-                    })}
-                    <button style={styles.addDay} onClick={() => setModal({ day: i })}>+</button>
-                  </>
-                )}
+                      </button>
+                      <button style={styles.wktCheck} onClick={() => toggleDone(w)} aria-label="בוצע">{w.completed ? '↩' : '✓'}</button>
+                    </div>
+                  )
+                })}
+                <button style={styles.addDay} onClick={() => setModal({ day: i })}>+</button>
               </div>
             </div>
           )
@@ -146,7 +148,15 @@ export default function PlannerScreen({ profile, onSendToCoach }) {
         <button className="btn btn-primary" onClick={sendToCoach}>שלח למאמן לאישור</button>
       </div>
 
-      {modal && <WorkoutModal day={modal.day} onClose={() => setModal(null)} onAdd={addWorkout} />}
+      {modal && (
+        <WorkoutModal
+          day={modal.day}
+          workout={modal.workout}
+          onClose={() => setModal(null)}
+          onAdd={addWorkout}
+          onUpdate={updateWorkout}
+        />
+      )}
     </div>
   )
 }
@@ -160,11 +170,12 @@ function Stat({ val, label }) {
   )
 }
 
-function WorkoutModal({ day, onClose, onAdd }) {
-  const [type, setType] = useState('easy')
-  const [km, setKm] = useState('')
-  const [mins, setMins] = useState('')
-  const [note, setNote] = useState('')
+function WorkoutModal({ day, workout, onClose, onAdd, onUpdate }) {
+  const editing = Boolean(workout)
+  const [type, setType] = useState(workout?.type || 'easy')
+  const [km, setKm] = useState(workout?.distance_km ?? '')
+  const [mins, setMins] = useState(workout?.duration_min ?? '')
+  const [note, setNote] = useState(workout?.note || '')
 
   // Interval-specific fields
   const [warmup, setWarmup] = useState('')
@@ -185,7 +196,9 @@ function WorkoutModal({ day, onClose, onAdd }) {
   })()
 
   function submit() {
-    if (isInterval) {
+    let payload
+    const intervalTouched = warmup || reps || repMeters || cooldown
+    if (isInterval && intervalTouched) {
       const r = Number(reps) || 0
       const m = Number(repMeters) || 0
       const parts = []
@@ -193,17 +206,19 @@ function WorkoutModal({ day, onClose, onAdd }) {
       if (r > 0 && m > 0) parts.push(`${r}×${m}מ${repRest ? ` (מנוחה ${repRest})` : ''}`)
       if (Number(cooldown) > 0) parts.push(`שחרור ${cooldown} ק"מ`)
       const builtNote = parts.join(' · ')
-      onAdd(day, { type, km: intervalTotal || '', mins, note: builtNote || note })
+      payload = { type, km: intervalTotal || '', mins, note: builtNote || note }
     } else {
-      onAdd(day, { type, km, mins, note })
+      payload = { type, km, mins, note }
     }
+    if (editing) onUpdate(workout.id, payload)
+    else onAdd(day, payload)
     onClose()
   }
 
   return (
     <div style={styles.modalBg} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div style={styles.modal}>
-        <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 14 }}>הוסף אימון — {DAYS_HE[day]}</h3>
+        <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 14 }}>{editing ? 'עריכת אימון' : 'הוסף אימון'} — {DAYS_HE[day]}</h3>
         <div className="field" style={{ marginBottom: 10 }}>
           <label>סוג</label>
           <select value={type} onChange={e => setType(e.target.value)}>
@@ -221,7 +236,9 @@ function WorkoutModal({ day, onClose, onAdd }) {
             </div>
             <div className="field" style={{ marginBottom: 10 }}><label>מנוחה בין חזרות (אופציונלי)</label><input type="text" value={repRest} onChange={e => setRepRest(e.target.value)} placeholder='90 שנ׳ / 200מ הליכה' /></div>
             <div style={styles.totalBox}>
-              סה"כ אימון: <strong>{intervalTotal || 0} ק"מ</strong>
+              {editing && !(warmup || reps || repMeters || cooldown)
+                ? <>אימון קיים: <strong>{km || 0} ק"מ</strong> · מלא שדות לעדכון</>
+                : <>סה"כ אימון: <strong>{intervalTotal || 0} ק"מ</strong></>}
             </div>
           </>
         ) : (
@@ -234,7 +251,7 @@ function WorkoutModal({ day, onClose, onAdd }) {
 
         <div className="btn-row">
           <button className="btn" onClick={onClose}>ביטול</button>
-          <button className="btn btn-primary" onClick={submit}>הוסף</button>
+          <button className="btn btn-primary" onClick={submit}>{editing ? 'שמור' : 'הוסף'}</button>
         </div>
       </div>
     </div>
@@ -249,10 +266,10 @@ const styles = {
   col: { display: 'flex', flexDirection: 'column', gap: 6 },
   dayHead: { textAlign: 'center', padding: '4px 0' },
   drop: { minHeight: 110, border: '0.5px dashed var(--border2)', borderRadius: 'var(--radius-sm)', padding: 5, display: 'flex', flexDirection: 'column', gap: 5 },
-  dropRest: { background: 'var(--surface2)', borderStyle: 'solid' },
   wkt: { borderRadius: 7, padding: '7px 8px', position: 'relative', fontSize: 11 },
-  wktX: { position: 'absolute', top: 4, left: 5, border: 'none', background: 'none', color: 'inherit', fontSize: 11, padding: 0, opacity: .6 },
-  wktCheck: { position: 'absolute', bottom: 4, left: 5, border: 'none', background: 'none', color: 'inherit', fontSize: 11, padding: 0, opacity: .5 },
+  wktBody: { display: 'block', width: '100%', textAlign: 'right', border: 'none', background: 'none', color: 'inherit', font: 'inherit', padding: 0, cursor: 'pointer' },
+  wktX: { position: 'absolute', top: 4, left: 5, border: 'none', background: 'none', color: 'inherit', fontSize: 11, padding: 0, opacity: .6, zIndex: 1 },
+  wktCheck: { position: 'absolute', bottom: 4, left: 5, border: 'none', background: 'none', color: 'inherit', fontSize: 11, padding: 0, opacity: .5, zIndex: 1 },
   addDay: { padding: 5, fontSize: 14, border: '0.5px dashed var(--border)', borderRadius: 7, background: 'transparent', color: 'var(--text3)' },
   goalRow: { display: 'flex', alignItems: 'center', gap: 10 },
   barBg: { flex: 1, height: 8, background: 'var(--surface2)', borderRadius: 4, overflow: 'hidden' },

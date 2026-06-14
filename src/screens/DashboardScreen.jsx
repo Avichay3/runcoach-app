@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react'
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, ReferenceLine, LabelList,
+} from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { weekKeyDate, FEEL_LABELS } from '../lib/constants'
+
+const CHART_WEEKS = 8
 
 export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
   const { user } = useAuth()
@@ -9,6 +15,7 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
   const [weekKm, setWeekKm] = useState(0)
   const [completed, setCompleted] = useState(0)
   const [planned, setPlanned] = useState(0)
+  const [weeklyData, setWeeklyData] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { load() }, [user])
@@ -18,8 +25,11 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
     setLoading(true)
     const { data: ups } = await supabase
       .from('daily_updates').select('*').eq('user_id', user.id)
-      .order('created_at', { ascending: false }).limit(10)
+      .order('created_at', { ascending: false }).limit(60)
     setUpdates(ups || [])
+
+    // Build the weekly km chart from actual logged runs (Strava)
+    buildWeekly(ups || [])
 
     const ws = weekKeyDate(0)
     const { data: plan } = await supabase.from('training_plans').select('id').eq('user_id', user.id).eq('week_start', ws).maybeSingle()
@@ -32,6 +42,25 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
       }
     }
     setLoading(false)
+  }
+
+  function buildWeekly(ups) {
+    const byWeek = {}
+    ups.forEach(u => {
+      const k = getWeekStart(new Date(u.created_at))
+      byWeek[k] = (byWeek[k] || 0) + (Number(u.distance_km) || 0)
+    })
+    const weeks = []
+    for (let i = CHART_WEEKS - 1; i >= 0; i--) {
+      const d = new Date()
+      d.setDate(d.getDate() - i * 7)
+      const key = getWeekStart(d)
+      weeks.push({
+        label: formatWeekLabel(new Date(key)),
+        km: Math.round((byWeek[key] || 0) * 10) / 10,
+      })
+    }
+    setWeeklyData(weeks)
   }
 
   if (loading) return <div style={{ textAlign: 'center', padding: 48 }}><span className="spinner" /></div>
@@ -53,6 +82,9 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
   const daysToGoal = profile.target_date
     ? Math.max(0, Math.ceil((new Date(profile.target_date) - new Date()) / (1000 * 60 * 60 * 24)))
     : '—'
+
+  const goal = computeGoalProgress(profile)
+  const maxKm = Math.max(target, ...weeklyData.map(w => w.km), 1)
 
   return (
     <div>
@@ -92,11 +124,79 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
         />
       </div>
 
-      {/* Progress bars */}
+      {/* Goal progress */}
+      <div className="card">
+        <div className="section-label">המטרה שלי</div>
+        <div style={styles.goalHead}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>{profile.goal}</div>
+            {profile.target_date && (
+              <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
+                {daysToGoal} ימים נותרו · {profile.target_date.slice(0, 10)}
+              </div>
+            )}
+          </div>
+          {goal.hasMetric && (
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontSize: 11, color: 'var(--text3)' }}>פער ליעד</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: goal.reached ? 'var(--green)' : 'var(--teal)' }}>
+                {goal.reached ? '✓ הושג!' : goal.gapLabel}
+              </div>
+            </div>
+          )}
+        </div>
+        {goal.hasMetric && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5, marginTop: 14, fontSize: 12, color: 'var(--text2)' }}>
+              <span>נוכחי: <strong>{goal.currentLabel}</strong></span>
+              <span>יעד: <strong>{goal.targetLabel}</strong></span>
+            </div>
+            <div style={{ height: 9, background: 'var(--surface2)', borderRadius: 5, overflow: 'hidden' }}>
+              <div style={{ height: '100%', borderRadius: 5, width: `${goal.pct}%`, background: goal.reached ? 'var(--green)' : 'var(--teal)', transition: 'width .6s ease' }} />
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, textAlign: 'center' }}>{goal.hint}</div>
+          </>
+        )}
+        {!goal.hasMetric && profile.target_date && (
+          <GoalBar label="התקדמות בזמן" pct={goal.timePct} nums={`${daysToGoal} ימים נותרו`} color="var(--teal)" />
+        )}
+      </div>
+
+      {/* Weekly progress bars */}
       <div className="card">
         <div className="section-label">התקדמות שבועית</div>
         <GoalBar label='עומס ק"מ' pct={kmPct} nums={`${weekKm} / ${target}`} color="var(--teal)" />
         <GoalBar label="עמידה בתוכנית" pct={planPct} nums={`${completed} / ${planned}`} color="var(--blue)" />
+      </div>
+
+      {/* Weekly km chart */}
+      <div className="card">
+        <div className="section-label">קילומטראז' שבועי — {CHART_WEEKS} שבועות אחרונים</div>
+        {weeklyData.some(w => w.km > 0) ? (
+          <ResponsiveContainer width="100%" height={230}>
+            <BarChart data={weeklyData} margin={{ top: 22, right: 8, left: 0, bottom: 0 }} barCategoryGap="22%">
+              <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
+              <XAxis dataKey="label" tick={{ fontSize: 12, fill: 'var(--text2)' }} axisLine={{ stroke: 'var(--border2)' }} tickLine={false} interval={0} />
+              <YAxis
+                tick={{ fontSize: 12, fill: 'var(--text2)' }}
+                axisLine={false} tickLine={false} width={34}
+                domain={[0, Math.ceil(maxKm / 10) * 10]}
+                tickFormatter={v => `${v}`}
+                label={{ value: 'ק"מ', angle: -90, position: 'insideLeft', fontSize: 11, fill: 'var(--text3)', dy: 20 }}
+              />
+              <ReferenceLine y={target} stroke="var(--blue)" strokeDasharray="5 4" strokeWidth={1.5}
+                label={{ value: `יעד ${target}`, fill: 'var(--blue)', fontSize: 11, position: 'insideTopRight' }} />
+              <Tooltip content={<KmTooltip />} cursor={{ fill: 'var(--surface2)', opacity: .5 }} />
+              <Bar dataKey="km" fill="var(--teal)" radius={[6, 6, 0, 0]}>
+                <LabelList dataKey="km" position="top" fontSize={11} fill="var(--text2)" formatter={v => v > 0 ? v : ''} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <div style={{ textAlign: 'center', padding: '28px 0', fontSize: 13, color: 'var(--text3)' }}>
+            חבר את Strava כדי לראות את הקילומטראז' השבועי שלך כאן.
+          </div>
+        )}
       </div>
 
       {/* Recent updates */}
@@ -129,7 +229,7 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
         <div className="card" style={{ textAlign: 'center', padding: 28 }}>
           <div style={{ fontSize: 28, marginBottom: 8 }}>✏️</div>
           <div style={{ fontSize: 14, color: 'var(--text2)', marginBottom: 4 }}>עדיין אין דיווחים</div>
-          <div style={{ fontSize: 13, color: 'var(--text3)' }}>דווח על אימון ראשון בלשונית "עדכון"</div>
+          <div style={{ fontSize: 13, color: 'var(--text3)' }}>הריצות יופיעו כאן אוטומטית אחרי סנכרון Strava</div>
         </div>
       )}
 
@@ -153,6 +253,80 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
           <span style={{ color: 'var(--teal)', fontSize: 16 }}>↗</span>
         </button>
       </div>
+    </div>
+  )
+}
+
+// Parse the goal into a measurable progress where possible.
+// Handles "Sub-18 ב-5K" / "Sub-40 ב-10K" against the matching PB.
+function computeGoalProgress(profile) {
+  const goal = profile.goal || ''
+  const timePct = (() => {
+    if (!profile.target_date) return 0
+    const end = new Date(profile.target_date)
+    const start = new Date(end); start.setDate(start.getDate() - 90) // assume ~12-week horizon
+    const total = end - start
+    const done = new Date() - start
+    return Math.max(0, Math.min(100, Math.round((done / total) * 100)))
+  })()
+
+  const m = goal.match(/sub[\s-]?(\d+)/i)
+  const dist = /10k/i.test(goal) ? '10k' : /5k/i.test(goal) ? '5k' : null
+  const pb = dist === '10k' ? profile.pb_10k : dist === '5k' ? profile.pb_5k : null
+
+  if (m && dist && pb) {
+    const targetMin = Number(m[1])
+    const targetSec = targetMin * 60
+    const currentSec = pbToSec(pb)
+    if (currentSec) {
+      const reached = currentSec <= targetSec
+      const gap = currentSec - targetSec
+      // Progress: assume a realistic starting point 12% slower than target
+      const startSec = targetSec * 1.12
+      const pct = Math.max(0, Math.min(100, Math.round(((startSec - currentSec) / (startSec - targetSec)) * 100)))
+      return {
+        hasMetric: true, reached,
+        currentLabel: pb,
+        targetLabel: `${targetMin}:00`,
+        gapLabel: reached ? '✓' : `${secToMs(gap)}`,
+        pct: reached ? 100 : pct,
+        hint: reached ? 'הגעת ליעד הזמן! 🎉' : `צריך לשפר ${secToMs(gap)} ב-${dist.toUpperCase()}`,
+        timePct,
+      }
+    }
+  }
+  return { hasMetric: false, timePct }
+}
+
+function pbToSec(pb) {
+  if (!pb) return null
+  const [m, s] = pb.split(':').map(Number)
+  if (isNaN(m) || isNaN(s)) return null
+  return m * 60 + s
+}
+function secToMs(sec) {
+  const a = Math.abs(Math.round(sec))
+  const m = Math.floor(a / 60)
+  const s = (a % 60).toString().padStart(2, '0')
+  return m > 0 ? `${m}:${s} דק'` : `${s} שנ'`
+}
+
+function getWeekStart(date) {
+  const d = new Date(date)
+  d.setDate(d.getDate() - d.getDay())
+  d.setHours(0, 0, 0, 0)
+  return d.toISOString().slice(0, 10)
+}
+function formatWeekLabel(date) {
+  return `${date.getDate()}/${date.getMonth() + 1}`
+}
+
+function KmTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 12px', boxShadow: 'var(--shadow)', fontSize: 13, direction: 'rtl' }}>
+      <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>שבוע {label}</div>
+      <div style={{ color: 'var(--teal)', fontWeight: 700 }}>{payload[0].value} ק"מ</div>
     </div>
   )
 }
@@ -273,5 +447,11 @@ const styles = {
     padding: '11px 14px',
     background: 'var(--surface3)',
     borderColor: 'var(--border)',
+  },
+  goalHead: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
   },
 }
