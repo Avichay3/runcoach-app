@@ -417,9 +417,10 @@ function DayCard({ day, wtype, dist, detail }) {
 function workoutStyle(t) {
   const k =
     /מנוח|רגיע/.test(t) ? null :
-    /אינטרוול|חזרות|ספרינט|fartlek|פרטלק/i.test(t) ? 'red' :
-    /טמפו|סף|threshold/i.test(t) ? 'amber' :
+    /אינטרוול|חזרות|ספרינט/i.test(t) ? 'red' :
+    /פארטלק|פרטלק|fartlek|טמפו|סף|threshold/i.test(t) ? 'amber' :
     /ארוכ|long/i.test(t) ? 'purple' :
+    /כוח|strength|גמישות|flexibility/i.test(t) ? 'blue' :
     /קל|שחרור|התאוששות|recovery|easy/i.test(t) ? 'green' :
     'teal'
   if (!k) return { accent: 'var(--text3)', badgeBg: 'var(--surface3)', badgeText: 'var(--text3)' }

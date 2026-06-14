@@ -1,11 +1,12 @@
 export const WORKOUT_TYPES = {
-  easy:     { label: 'ריצה קלה',   bg: 'var(--teal-l)',   text: 'var(--teal-d)',   border: 'var(--teal)' },
-  tempo:    { label: 'טמפו',        bg: 'var(--amber-l)',  text: 'var(--amber-d)',  border: 'var(--amber)' },
-  interval: { label: 'אינטרוולים', bg: 'var(--coral-l)',  text: 'var(--coral-d)',  border: 'var(--coral)' },
-  long:     { label: 'ריצה ארוכה', bg: 'var(--blue-l)',   text: 'var(--blue-d)',   border: 'var(--blue)' },
-  recovery: { label: 'שחזור',       bg: 'var(--surface2)', text: 'var(--text2)',    border: 'var(--border2)' },
-  strength: { label: 'כוח',         bg: 'var(--purple-l)', text: 'var(--purple-d)', border: 'var(--purple)' },
-  race:     { label: 'תחרות',       bg: 'var(--red-l)',    text: 'var(--red-d)',    border: 'var(--red)' },
+  easy:           { label: 'ריצה קלה',            bg: 'var(--teal-l)',   text: 'var(--teal-d)',   border: 'var(--teal)' },
+  long:           { label: 'ארוכה',               bg: 'var(--blue-l)',   text: 'var(--blue-d)',   border: 'var(--blue)' },
+  fartlek:        { label: 'פארטלק',              bg: 'var(--amber-l)',  text: 'var(--amber-d)',  border: 'var(--amber)' },
+  interval:       { label: 'אינטרוואלים',         bg: 'var(--coral-l)',  text: 'var(--coral-d)',  border: 'var(--coral)' },
+  race:           { label: 'תחרות / מרוץ',        bg: 'var(--red-l)',    text: 'var(--red-d)',    border: 'var(--red)' },
+  strength_upper: { label: 'כוח — פלג גוף עליון', bg: 'var(--purple-l)', text: 'var(--purple-d)', border: 'var(--purple)' },
+  strength_lower: { label: 'כוח — פלג גוף תחתון', bg: 'var(--surface2)', text: 'var(--text2)',    border: 'var(--border2)' },
+  flexibility:    { label: 'גמישות',              bg: 'var(--green-l)',  text: 'var(--green-d)',  border: 'var(--green)' },
 }
 
 export const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']

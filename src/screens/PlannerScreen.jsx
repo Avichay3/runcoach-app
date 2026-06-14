@@ -61,7 +61,8 @@ export default function PlannerScreen({ profile, onSendToCoach }) {
   const fmt = d => `${d.getDate()}/${d.getMonth() + 1}`
   const byDay = day => workouts.filter(w => w.day_of_week === day)
   const totalKm = Math.round(workouts.reduce((s, w) => s + (Number(w.distance_km) || 0), 0) * 10) / 10
-  const totalRuns = workouts.filter(w => w.type !== 'strength').length
+  const NON_RUN = ['strength_upper', 'strength_lower', 'flexibility', 'strength']
+  const totalRuns = workouts.filter(w => !NON_RUN.includes(w.type)).length
   const totalMins = workouts.reduce((s, w) => s + (Number(w.duration_min) || 0), 0)
   const pct = Math.min(100, Math.round((totalKm / target) * 100))
 

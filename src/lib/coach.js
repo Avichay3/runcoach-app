@@ -154,7 +154,7 @@ ${paceZones ? `
 הכללים:
 - week: 0 = שבוע זה, 1 = שבוע הבא
 - day: 0=ראשון 1=שני 2=שלישי 3=רביעי 4=חמישי 5=שישי 6=שבת
-- type: easy / tempo / interval / long / recovery / strength / rest (rest = מחיקת האימון ביום זה)
+- type: easy (קלה) / long (ארוכה) / fartlek (פארטלק) / interval (אינטרוואלים) / race (תחרות) / strength_upper (כוח עליון) / strength_lower (כוח תחתון) / flexibility (גמישות) / rest (מחיקת האימון ביום זה)
 - distance_km: מספר בלבד (או 0 אם לא רלוונטי)
 - note: הערה קצרה (מחרוזת ריקה אם אין)
 
