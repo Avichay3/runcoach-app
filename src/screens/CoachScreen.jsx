@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { callCoach, buildSystemPrompt, updateCoachMemory } from '../lib/coach'
 import { compressImage } from '../lib/image'
+import { DAYS_HE, WORKOUT_TYPES, weekKeyDate } from '../lib/constants'
 
 // How many recent messages to send to the coach for conversational context.
 // Set high so the coach effectively remembers the whole relationship; the
@@ -18,9 +19,10 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [trainingHistory, setTrainingHistory] = useState([])
-  const [pendingImage, setPendingImage] = useState(null)   // File chosen, not yet sent
-  const [previewUrl, setPreviewUrl] = useState(null)        // object URL for the preview chip
-  const [coachMemory, setCoachMemory] = useState('')        // long-term notebook
+  const [pendingImage, setPendingImage] = useState(null)
+  const [previewUrl, setPreviewUrl] = useState(null)
+  const [coachMemory, setCoachMemory] = useState('')
+  const [appliedPlanIds, setAppliedPlanIds] = useState(new Set())
   const boxRef = useRef(null)
   const fileRef = useRef(null)
 
@@ -121,9 +123,10 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
     try {
       const history = next.slice(-CONTEXT_MESSAGES).map((m, idx, arr) => buildApiMessage(m, idx === arr.length - 1))
       const reply = await callCoach(history, buildSystemPrompt(profile, weeklyKm, trainingHistory, coachMemory))
-      setMessages(prev => [...prev, { role: 'assistant', content: reply }])
-      await persist('assistant', reply)
-      refreshMemory(trimmed || '[תמונה]', reply)
+      const { clean, planData } = extractPlanEdit(reply)
+      setMessages(prev => [...prev, { role: 'assistant', content: clean, planData }])
+      await persist('assistant', clean)
+      refreshMemory(trimmed || '[תמונה]', clean)
     } catch {
       const errMsg = 'מצטער, הייתה שגיאה בחיבור למאמן. נסה שוב בעוד רגע.'
       setMessages(prev => [...prev, { role: 'assistant', content: errMsg }])
@@ -150,27 +153,76 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
 
   const canSend = !loading && (input.trim() || pendingImage)
 
+  async function applyPlanEdit(planData, msgIdx) {
+    const { week = 0, day, type, distance_km, note } = planData
+    const weekStart = weekKeyDate(week)
+    let { data: plan } = await supabase.from('training_plans').select('id')
+      .eq('user_id', user.id).eq('week_start', weekStart).maybeSingle()
+    if (!plan) {
+      const { data: created } = await supabase.from('training_plans')
+        .insert({ user_id: user.id, week_start: weekStart, target_km: profile?.weekly_km || 50 })
+        .select().single()
+      plan = created
+    }
+    await supabase.from('workouts').delete().eq('plan_id', plan.id).eq('day_of_week', day)
+    if (type !== 'rest') {
+      await supabase.from('workouts').insert({
+        plan_id: plan.id, user_id: user.id, day_of_week: day,
+        type, distance_km: distance_km || null, note: note || null,
+      })
+    }
+    setAppliedPlanIds(prev => new Set([...prev, msgIdx]))
+  }
+
   return (
+    <>
+    <style>{`
+      .wa-bg {
+        background-color: var(--chat-bg);
+        background-image: radial-gradient(circle, var(--chat-dots) 1px, transparent 1px);
+        background-size: 22px 22px;
+        border-radius: 14px;
+        padding: 12px 10px;
+      }
+      .wa-bubble-coach {
+        background: var(--chat-bubble-coach);
+        border-radius: 4px 14px 14px 14px;
+        box-shadow: 0 1px 2px rgba(0,0,0,.12);
+        color: var(--text);
+      }
+      .wa-bubble-user {
+        background: var(--teal);
+        color: #fff;
+        border-radius: 14px 4px 14px 14px;
+        box-shadow: 0 1px 3px rgba(240,86,39,.30);
+        white-space: pre-wrap;
+      }
+    `}</style>
     <div style={styles.wrap}>
-      <div style={styles.msgs} ref={boxRef}>
+      <div className="wa-bg" style={styles.msgs} ref={boxRef}>
         {messages.map((m, i) => (
-          <div key={i} style={{ ...styles.msg, ...(m.role === 'user' ? styles.msgUser : styles.msgCoach) }}>
-            <div style={{ ...styles.av, ...(m.role === 'user' ? styles.avUser : styles.avCoach) }}>
-              {m.role === 'user' ? 'אני' : 'AI'}
+          <div key={i}>
+            <div style={{ ...styles.msg, ...(m.role === 'user' ? styles.msgUser : styles.msgCoach) }}>
+              <div style={{ ...styles.bubble }} className={m.role === 'user' ? 'wa-bubble-user' : 'wa-bubble-coach'}>
+                {m.image && (
+                  <img src={m.image} alt="תמונה" style={{ ...styles.msgImg, marginBottom: m.content ? 8 : 0 }} />
+                )}
+                {m.content && (m.role === 'user' ? m.content : <CoachMarkdown content={m.content} />)}
+              </div>
             </div>
-            <div style={{ ...styles.bubble, ...(m.role === 'user' ? styles.bubbleUser : styles.bubbleCoach) }}>
-              {m.image && (
-                <img src={m.image} alt="תמונה" style={{ ...styles.msgImg, marginBottom: m.content ? 8 : 0 }} />
-              )}
-              {m.content && (m.role === 'user' ? m.content : <CoachMarkdown content={m.content} />)}
-            </div>
+            {m.planData && !appliedPlanIds.has(i) && (
+              <PlanConfirmCard
+                planData={m.planData}
+                onApprove={() => applyPlanEdit(m.planData, i)}
+                onReject={() => setAppliedPlanIds(prev => new Set([...prev, i]))}
+              />
+            )}
           </div>
         ))}
 
         {loading && (
           <div style={{ ...styles.msg, ...styles.msgCoach }}>
-            <div style={{ ...styles.av, ...styles.avCoach }}>AI</div>
-            <div style={{ ...styles.bubble, ...styles.bubbleCoach }}>
+            <div style={styles.bubble} className="wa-bubble-coach">
               <div style={styles.dots}>
                 <span style={dot(0)} />
                 <span style={dot(.18)} />
@@ -213,7 +265,65 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
         </button>
       </div>
     </div>
+    </>
   )
+}
+
+// Extract @@PLAN:{...}@@ from coach reply, return clean text + parsed plan data
+function extractPlanEdit(content) {
+  const match = content.match(/@@PLAN:([\s\S]*?)@@/)
+  if (!match) return { clean: content, planData: null }
+  try {
+    const planData = JSON.parse(match[1].trim())
+    const clean = content.replace(/\n?@@PLAN:[\s\S]*?@@/g, '').trim()
+    return { clean, planData }
+  } catch {
+    return { clean: content, planData: null }
+  }
+}
+
+function PlanConfirmCard({ planData, onApprove, onReject }) {
+  const { day, type, distance_km, note, week = 0 } = planData
+  const dayName = DAYS_HE[day] ?? `יום ${day}`
+  const typeMeta = WORKOUT_TYPES[type] || { label: type }
+  const weekLabel = week === 0 ? 'שבוע זה' : 'שבוע הבא'
+  const [done, setDone] = useState(null)
+
+  if (done === 'approved') return (
+    <div style={planCard.wrap}>
+      <span style={{ color: 'var(--green-d)', fontWeight: 600, fontSize: 13 }}>✓ התוכנית עודכנה!</span>
+    </div>
+  )
+  if (done === 'rejected') return null
+
+  return (
+    <div style={planCard.wrap}>
+      <div style={planCard.title}>המאמן מציע לעדכן את התוכנית</div>
+      <div style={planCard.row}>
+        <span style={planCard.chip}>{weekLabel}</span>
+        <span style={planCard.chip}>{dayName}</span>
+        {type !== 'rest' && <span style={{ ...planCard.chip, background: typeMeta.bg || 'var(--surface2)', color: typeMeta.text || 'var(--text2)' }}>{typeMeta.label}</span>}
+        {distance_km > 0 && <span style={planCard.chip}>{distance_km} ק"מ</span>}
+        {type === 'rest' && <span style={planCard.chip}>מנוחה</span>}
+      </div>
+      {note ? <div style={planCard.note}>{note}</div> : null}
+      <div style={planCard.btns}>
+        <button style={planCard.btnApprove} onClick={() => { onApprove(); setDone('approved') }}>✓ אשר שינוי</button>
+        <button style={planCard.btnReject} onClick={() => { onReject(); setDone('rejected') }}>✗ דחה</button>
+      </div>
+    </div>
+  )
+}
+
+const planCard = {
+  wrap: { background: 'var(--surface)', border: '1.5px solid var(--teal)', borderRadius: 12, padding: '12px 14px', margin: '6px 0 6px 38px', boxShadow: 'var(--shadow-sm)' },
+  title: { fontSize: 12, fontWeight: 700, color: 'var(--teal)', marginBottom: 8 },
+  row: { display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 },
+  chip: { fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: 'var(--surface2)', color: 'var(--text2)' },
+  note: { fontSize: 12, color: 'var(--text2)', marginBottom: 8 },
+  btns: { display: 'flex', gap: 8 },
+  btnApprove: { flex: 1, padding: '8px', borderRadius: 10, background: 'var(--teal)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600 },
+  btnReject: { padding: '8px 16px', borderRadius: 10, background: 'var(--surface2)', color: 'var(--text2)', border: 'none', fontSize: 13, fontWeight: 600 },
 }
 
 // chat_messages.content is either plain text or JSON {t, img}
@@ -378,38 +488,11 @@ const styles = {
   },
   msgUser: { alignSelf: 'flex-end', flexDirection: 'row-reverse' },
   msgCoach: { alignSelf: 'flex-start' },
-  av: {
-    width: 30, height: 30,
-    borderRadius: '50%',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: 11, fontWeight: 700, flexShrink: 0,
-  },
-  avCoach: {
-    background: 'var(--purple-l)',
-    color: 'var(--purple)',
-  },
-  avUser: {
-    background: 'var(--teal)',
-    color: '#fff',
-  },
   bubble: {
     padding: '10px 14px',
-    borderRadius: 14,
     fontSize: 14,
     lineHeight: 1.6,
     overflowWrap: 'anywhere',
-  },
-  bubbleCoach: {
-    background: 'var(--surface)',
-    boxShadow: 'var(--shadow-sm)',
-    borderBottomLeftRadius: 4,
-  },
-  bubbleUser: {
-    background: 'var(--teal)',
-    color: '#fff',
-    boxShadow: '0 2px 6px rgba(240,86,39,.25)',
-    borderBottomRightRadius: 4,
-    whiteSpace: 'pre-wrap',
   },
   inputRow: {
     display: 'flex',

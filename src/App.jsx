@@ -8,7 +8,6 @@ import { runProactiveCheck } from './lib/proactive'
 import AuthScreen from './screens/AuthScreen'
 import DashboardScreen from './screens/DashboardScreen'
 import PlannerScreen from './screens/PlannerScreen'
-import UpdateScreen from './screens/UpdateScreen'
 import CoachScreen from './screens/CoachScreen'
 import ProfileScreen from './screens/ProfileScreen'
 import ProgressScreen from './screens/ProgressScreen'
@@ -27,14 +26,6 @@ const TABS = [
     icon: (
       <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         <rect x="2" y="3" width="16" height="15" rx="2.5" /><path d="M6 1v4M14 1v4M2 8h16" />
-      </svg>
-    ),
-  },
-  {
-    id: 'update', label: 'עדכון',
-    icon: (
-      <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14.5 2.5a2.12 2.12 0 0 1 3 3L6 17H3v-3L14.5 2.5z" />
       </svg>
     ),
   },
@@ -193,7 +184,6 @@ export default function App() {
       <div style={styles.content}>
         {tab === 'dashboard' && <DashboardScreen profile={profile} onAsk={sendToCoach} onGoProfile={() => setTab('profile')} />}
         {tab === 'planner'   && <PlannerScreen profile={profile} onSendToCoach={sendToCoach} />}
-        {tab === 'update'    && <UpdateScreen profile={profile} onSendToCoach={sendToCoach} />}
         {tab === 'progress'  && <ProgressScreen profile={profile} />}
         {tab === 'coach'     && <CoachScreen profile={profile} weeklyKm={weeklyKm} pendingMessage={pendingMessage} onConsumePending={() => setPendingMessage(null)} />}
         {tab === 'profile'   && <ProfileScreen profile={profile} onSave={async (f) => { const r = await save(f); await reload(); return r }} />}

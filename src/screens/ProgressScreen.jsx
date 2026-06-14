@@ -31,7 +31,7 @@ export default function ProgressScreen({ profile }) {
     // Actual runs from daily_updates
     const { data: updates } = await supabase
       .from('daily_updates')
-      .select('distance_km, fatigue, pain, feel, created_at')
+      .select('distance_km, pace, avg_hr, fatigue, pain, feel, created_at')
       .eq('user_id', user.id)
       .gte('created_at', since.toISOString())
       .order('created_at', { ascending: true })
@@ -72,6 +72,9 @@ export default function ProgressScreen({ profile }) {
         km: Math.round(Number(u.distance_km) * 10) / 10,
         fatigue: u.fatigue,
         feel: u.feel,
+        paceSec: paceToSec(u.pace),
+        paceLabel: u.pace || null,
+        hr: u.avg_hr ? Number(u.avg_hr) : null,
       })))
     }
 
@@ -112,7 +115,7 @@ export default function ProgressScreen({ profile }) {
           <div style={{ fontSize: 36, marginBottom: 12 }}>📊</div>
           <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>אין עדיין נתונים</div>
           <div style={{ fontSize: 13, color: 'var(--text3)', lineHeight: 1.6 }}>
-            דווח על ריצות בלשונית "עדכון" וכאן יופיעו הגרפים של ההתקדמות שלך
+            חבר את Strava בפרופיל או המתן לסנכרון הראשון — הגרפים יופיעו אוטומטית.
           </div>
         </div>
       ) : (
@@ -155,6 +158,53 @@ export default function ProgressScreen({ profile }) {
                   <Area type="monotone" dataKey="km" stroke="var(--teal)" strokeWidth={2.5}
                     fill="url(#kmGrad)" dot={{ fill: 'var(--teal)', r: 3, strokeWidth: 0 }}
                     activeDot={{ r: 5, fill: 'var(--teal)' }} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </ChartCard>
+          )}
+
+          {/* Pace trend */}
+          {runsData.some(r => r.paceSec) && (
+            <ChartCard title="קצב לאורך זמן" subtitle="שיפור = הקו יורד — קצב מהיר יותר">
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={runsData.filter(r => r.paceSec)}>
+                  <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="4 4" />
+                  <XAxis dataKey="date" tick={tickStyle} axisLine={false} tickLine={false} />
+                  <YAxis
+                    domain={['auto', 'auto']}
+                    reversed
+                    tick={tickStyle} axisLine={false} tickLine={false} width={36}
+                    tickFormatter={secToMinSec}
+                  />
+                  <Tooltip content={<PaceTooltip />} />
+                  <Line type="monotone" dataKey="paceSec" name="קצב"
+                    stroke="var(--blue)" strokeWidth={2.5}
+                    dot={{ r: 3, fill: 'var(--blue)', strokeWidth: 0 }}
+                    activeDot={{ r: 5 }} connectNulls />
+                </LineChart>
+              </ResponsiveContainer>
+            </ChartCard>
+          )}
+
+          {/* HR trend */}
+          {runsData.some(r => r.hr) && (
+            <ChartCard title="דופק ממוצע" subtitle="מגמת ירידה = שיפור ביעילות אירובית">
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={runsData.filter(r => r.hr)}>
+                  <defs>
+                    <linearGradient id="hrGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--coral)" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="var(--coral)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="4 4" />
+                  <XAxis dataKey="date" tick={tickStyle} axisLine={false} tickLine={false} />
+                  <YAxis domain={['auto', 'auto']} tick={tickStyle} axisLine={false} tickLine={false} width={30} />
+                  <Tooltip content={<HrTooltip />} />
+                  <Area type="monotone" dataKey="hr" stroke="var(--coral)" strokeWidth={2.5}
+                    fill="url(#hrGrad)"
+                    dot={{ fill: 'var(--coral)', r: 3, strokeWidth: 0 }}
+                    activeDot={{ r: 5, fill: 'var(--coral)' }} />
                 </AreaChart>
               </ResponsiveContainer>
             </ChartCard>
@@ -232,6 +282,26 @@ function RunTooltip({ active, payload, label }) {
   )
 }
 
+function PaceTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null
+  return (
+    <div style={ttStyle}>
+      <div style={ttLabel}>{label}</div>
+      <div style={{ color: 'var(--blue)', fontWeight: 600 }}>{secToMinSec(payload[0].value)} דק/ק"מ</div>
+    </div>
+  )
+}
+
+function HrTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null
+  return (
+    <div style={ttStyle}>
+      <div style={ttLabel}>{label}</div>
+      <div style={{ color: 'var(--coral)', fontWeight: 600 }}>{payload[0].value} דופק</div>
+    </div>
+  )
+}
+
 function FatigueTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
   return (
@@ -251,6 +321,20 @@ const legendFormatter = (value) => (
 )
 
 // ── Helpers ──────────────────────────────
+
+function paceToSec(pace) {
+  if (!pace) return null
+  const [m, s] = pace.split(':').map(Number)
+  if (isNaN(m) || isNaN(s)) return null
+  return m * 60 + s
+}
+
+function secToMinSec(sec) {
+  if (!sec) return ''
+  const m = Math.floor(sec / 60)
+  const s = Math.round(sec % 60).toString().padStart(2, '0')
+  return `${m}:${s}`
+}
 
 function getWeekStart(date) {
   const d = new Date(date)
