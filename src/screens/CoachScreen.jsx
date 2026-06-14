@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { callCoach, buildSystemPrompt, updateCoachMemory } from '../lib/coach'
 import { compressImage } from '../lib/image'
-import { DAYS_HE, WORKOUT_TYPES, weekKeyDate } from '../lib/constants'
+import { DAYS_HE, WORKOUT_TYPES, weekKeyDate, goalToText } from '../lib/constants'
 
 // How many recent messages to send to the coach for conversational context.
 // Set high so the coach effectively remembers the whole relationship; the
@@ -59,8 +59,9 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
     if (data && data.length) {
       setMessages(data.map(m => ({ role: m.role, ...parseStored(m.content) })))
     } else {
-      const greeting = profile?.goal
-        ? `שלום! אני המאמן שלך. היעד שלנו: ${profile.goal} עד ${profile.target_date || 'התאריך שנקבע'}. דווח לי על אימון, שלח תוכנית, או שאל כל שאלה.`
+      const goalDesc = goalToText(profile?.goal)
+      const greeting = goalDesc
+        ? `שלום! אני המאמן שלך. היעד שלנו: ${goalDesc}${profile.target_date ? ` עד ${profile.target_date}` : ''}. דווח לי על אימון, שלח תוכנית, או שאל כל שאלה.`
         : 'שלום! כדי שאוכל ללוות אותך, התחל מהשלמת הפרופיל. אחר כך נבנה תוכנית ונתחיל לעקוב.'
       setMessages([{ role: 'assistant', content: greeting }])
       await persist('assistant', greeting)

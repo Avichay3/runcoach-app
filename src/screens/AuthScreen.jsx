@@ -36,7 +36,7 @@ export default function AuthScreen() {
     if (msg.includes('already registered')) return 'המייל כבר רשום — נסה להתחבר'
     if (msg.includes('Password')) return 'הסיסמה חייבת להכיל לפחות 6 תווים'
     if (msg.includes('email')) return 'כתובת מייל לא תקינה'
-    return msg
+    return 'אירעה שגיאה, נסה שוב'
   }
 
   return (
