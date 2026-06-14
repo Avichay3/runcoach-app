@@ -166,8 +166,37 @@ function WorkoutModal({ day, onClose, onAdd }) {
   const [mins, setMins] = useState('')
   const [note, setNote] = useState('')
 
+  // Interval-specific fields
+  const [warmup, setWarmup] = useState('')
+  const [reps, setReps] = useState('')
+  const [repMeters, setRepMeters] = useState('')
+  const [cooldown, setCooldown] = useState('')
+  const [repRest, setRepRest] = useState('')
+
+  const isInterval = type === 'interval'
+
+  // Auto-computed total distance for intervals (km)
+  const intervalTotal = (() => {
+    const w = Number(warmup) || 0
+    const r = Number(reps) || 0
+    const m = Number(repMeters) || 0
+    const c = Number(cooldown) || 0
+    return Math.round((w + (r * m) / 1000 + c) * 100) / 100
+  })()
+
   function submit() {
-    onAdd(day, { type, km, mins, note })
+    if (isInterval) {
+      const r = Number(reps) || 0
+      const m = Number(repMeters) || 0
+      const parts = []
+      if (Number(warmup) > 0) parts.push(`חימום ${warmup} ק"מ`)
+      if (r > 0 && m > 0) parts.push(`${r}×${m}מ${repRest ? ` (מנוחה ${repRest})` : ''}`)
+      if (Number(cooldown) > 0) parts.push(`שחרור ${cooldown} ק"מ`)
+      const builtNote = parts.join(' · ')
+      onAdd(day, { type, km: intervalTotal || '', mins, note: builtNote || note })
+    } else {
+      onAdd(day, { type, km, mins, note })
+    }
     onClose()
   }
 
@@ -181,9 +210,28 @@ function WorkoutModal({ day, onClose, onAdd }) {
             {Object.entries(WORKOUT_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
         </div>
-        <div className="field" style={{ marginBottom: 10 }}><label>מרחק (ק"מ)</label><input type="number" value={km} onChange={e => setKm(e.target.value)} placeholder="10" /></div>
-        <div className="field" style={{ marginBottom: 10 }}><label>משך (דקות)</label><input type="number" value={mins} onChange={e => setMins(e.target.value)} placeholder="60" /></div>
-        <div className="field" style={{ marginBottom: 10 }}><label>הערה</label><input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="6×800מ" /></div>
+
+        {isInterval ? (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+              <div className="field"><label>חימום (ק"מ)</label><input type="number" value={warmup} onChange={e => setWarmup(e.target.value)} placeholder="2" /></div>
+              <div className="field"><label>שחרור (ק"מ)</label><input type="number" value={cooldown} onChange={e => setCooldown(e.target.value)} placeholder="1" /></div>
+              <div className="field"><label>מס' חזרות</label><input type="number" value={reps} onChange={e => setReps(e.target.value)} placeholder="6" /></div>
+              <div className="field"><label>מרחק חזרה (מ')</label><input type="number" value={repMeters} onChange={e => setRepMeters(e.target.value)} placeholder="400" /></div>
+            </div>
+            <div className="field" style={{ marginBottom: 10 }}><label>מנוחה בין חזרות (אופציונלי)</label><input type="text" value={repRest} onChange={e => setRepRest(e.target.value)} placeholder='90 שנ׳ / 200מ הליכה' /></div>
+            <div style={styles.totalBox}>
+              סה"כ אימון: <strong>{intervalTotal || 0} ק"מ</strong>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="field" style={{ marginBottom: 10 }}><label>מרחק (ק"מ)</label><input type="number" value={km} onChange={e => setKm(e.target.value)} placeholder="10" /></div>
+            <div className="field" style={{ marginBottom: 10 }}><label>משך (דקות)</label><input type="number" value={mins} onChange={e => setMins(e.target.value)} placeholder="60" /></div>
+            <div className="field" style={{ marginBottom: 10 }}><label>הערה</label><input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="הערה חופשית" /></div>
+          </>
+        )}
+
         <div className="btn-row">
           <button className="btn" onClick={onClose}>ביטול</button>
           <button className="btn btn-primary" onClick={submit}>הוסף</button>
@@ -210,5 +258,6 @@ const styles = {
   barBg: { flex: 1, height: 8, background: 'var(--surface2)', borderRadius: 4, overflow: 'hidden' },
   barFill: { height: '100%', borderRadius: 4, background: 'var(--teal)', transition: 'width .4s' },
   modalBg: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20, backdropFilter: 'blur(4px)' },
-  modal: { background: 'var(--surface)', borderRadius: 18, padding: 22, width: 300, maxWidth: '100%', boxShadow: 'var(--shadow-md)' },
+  modal: { background: 'var(--surface)', borderRadius: 18, padding: 22, width: 320, maxWidth: '100%', boxShadow: 'var(--shadow-md)' },
+  totalBox: { background: 'var(--teal-l)', color: 'var(--teal-d)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', fontSize: 13, marginBottom: 10, textAlign: 'center' },
 }
