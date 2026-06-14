@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { compressImage } from '../lib/image'
 import { startStravaAuth, syncStrava, stravaConfigured } from '../lib/strava'
+import { enablePush, disablePush, sendTestReminder, pushSupported, iosNeedsInstall } from '../lib/push'
 
 const FIELDS_TOP = [
   { id: 'age', label: 'גיל', type: 'number', placeholder: '34' },
@@ -72,6 +73,7 @@ export default function ProfileScreen({ profile, onSave }) {
     <div>
       <AvatarCard profile={profile} user={user} onSave={onSave} />
       <StravaCard profile={profile} />
+      <ReminderCard profile={profile} user={user} onSave={onSave} />
 
       <div className="card">
         <div className="card-title">פרופיל המתאמן</div>
@@ -220,6 +222,141 @@ function GoalEditor({ value, dateValue, onGoalChange, onDateChange }) {
       </div>
     </div>
   )
+}
+
+function ReminderCard({ profile, user, onSave }) {
+  const [enabled, setEnabled] = useState(false)
+  const [time, setTime] = useState('07:00')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+  const [testing, setTesting] = useState(false)
+
+  useEffect(() => {
+    if (profile) {
+      setEnabled(Boolean(profile.reminder_enabled))
+      setTime(profile.reminder_time || '07:00')
+    }
+  }, [profile])
+
+  const supported = pushSupported()
+  const needsInstall = supported && iosNeedsInstall()
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Jerusalem'
+
+  async function toggle() {
+    if (busy) return
+    setMsg(null)
+    setBusy(true)
+    try {
+      if (!enabled) {
+        await enablePush(user.id)
+        await onSave({ reminder_enabled: true, reminder_time: time, reminder_tz: tz })
+        setEnabled(true)
+        setMsg({ ok: true, text: `מעולה! תקבל תזכורת יומית בשעה ${time}` })
+      } else {
+        await disablePush()
+        await onSave({ reminder_enabled: false })
+        setEnabled(false)
+        setMsg({ ok: true, text: 'התזכורות כובו' })
+      }
+    } catch (err) {
+      setMsg({ ok: false, text: err.message })
+    }
+    setBusy(false)
+  }
+
+  async function changeTime(newTime) {
+    setTime(newTime)
+    if (enabled) {
+      await onSave({ reminder_time: newTime, reminder_tz: tz })
+      setMsg({ ok: true, text: `השעה עודכנה ל-${newTime}` })
+    }
+  }
+
+  async function test() {
+    setTesting(true)
+    setMsg(null)
+    try {
+      const r = await sendTestReminder()
+      setMsg(r.sent > 0
+        ? { ok: true, text: 'נשלחה התראת בדיקה — בדוק את המכשיר' }
+        : { ok: false, text: 'אין מכשיר רשום להתראות. הפעל מחדש את התזכורות.' })
+    } catch (err) {
+      setMsg({ ok: false, text: err.message })
+    }
+    setTesting(false)
+  }
+
+  return (
+    <div style={r.card}>
+      <div style={r.head}>
+        <div style={r.icon}>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          </svg>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={r.title}>תזכורת אימון יומית</div>
+          <div style={r.sub}>התראה לפלאפון עם האימון של היום</div>
+        </div>
+        {supported && !needsInstall && (
+          <button
+            onClick={toggle}
+            disabled={busy}
+            aria-label="הפעל תזכורות"
+            style={{ ...r.switch, ...(enabled ? r.switchOn : {}) }}
+          >
+            <span style={{ ...r.knob, ...(enabled ? r.knobOn : {}) }} />
+          </button>
+        )}
+      </div>
+
+      {!supported ? (
+        <div style={r.notice}>הדפדפן הזה לא תומך בהתראות. נסה דרך Chrome או הוסף את האפליקציה למסך הבית.</div>
+      ) : needsInstall ? (
+        <div style={r.notice}>
+          📱 כדי לקבל התראות באייפון: פתח את האפליקציה בספארי, לחץ על <strong>שיתוף</strong> (הריבוע עם החץ) ואז <strong>הוסף למסך הבית</strong>. פתח את האפליקציה מהמסך הבית והפעל את התזכורת כאן.
+        </div>
+      ) : enabled ? (
+        <>
+          <div style={r.timeRow}>
+            <label style={r.timeLabel}>שעת התזכורת</label>
+            <input
+              type="time"
+              value={time}
+              onChange={e => changeTime(e.target.value)}
+              style={r.timeInput}
+            />
+          </div>
+          <button style={r.testBtn} onClick={test} disabled={testing}>
+            {testing ? <span className="spinner" style={{ width: 14, height: 14 }} /> : 'שלח התראת בדיקה'}
+          </button>
+        </>
+      ) : (
+        <div style={r.hint}>הפעל את המתג כדי לקבל תזכורת יומית. תוכל לבחור את השעה.</div>
+      )}
+
+      {msg && <div style={{ ...r.msg, color: msg.ok ? 'var(--green-d)' : 'var(--red-d)' }}>{msg.text}</div>}
+    </div>
+  )
+}
+
+const r = {
+  card: { background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '16px 18px', marginBottom: 14, boxShadow: 'var(--shadow-sm)' },
+  head: { display: 'flex', alignItems: 'center', gap: 12 },
+  icon: { width: 40, height: 40, borderRadius: 10, background: 'var(--teal)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 8px rgba(240,86,39,.35)' },
+  title: { fontSize: 15, fontWeight: 700 },
+  sub: { fontSize: 12.5, color: 'var(--text3)', lineHeight: 1.5, marginTop: 1 },
+  switch: { width: 46, height: 27, borderRadius: 20, border: 'none', background: 'var(--surface2)', position: 'relative', flexShrink: 0, transition: 'background .2s', padding: 0 },
+  switchOn: { background: 'var(--teal)' },
+  knob: { position: 'absolute', top: 3, insetInlineStart: 3, width: 21, height: 21, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.3)', transition: 'transform .2s' },
+  knobOn: { transform: 'translateX(-19px)' },
+  timeRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, gap: 12 },
+  timeLabel: { fontSize: 13, color: 'var(--text2)', fontWeight: 500 },
+  timeInput: { fontSize: 15, padding: '8px 12px', border: '1.5px solid var(--border2)', borderRadius: 'var(--radius-sm)', background: 'var(--surface3)', color: 'var(--text)', fontWeight: 600 },
+  testBtn: { width: '100%', marginTop: 12, padding: '9px', borderRadius: 'var(--radius-sm)', background: 'var(--surface2)', color: 'var(--text2)', border: 'none', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  hint: { fontSize: 12.5, color: 'var(--text3)', marginTop: 12 },
+  notice: { fontSize: 12.5, color: 'var(--text2)', background: 'var(--surface2)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', marginTop: 12, lineHeight: 1.6 },
+  msg: { fontSize: 12.5, marginTop: 10, fontWeight: 600 },
 }
 
 function AvatarCard({ profile, user, onSave }) {
