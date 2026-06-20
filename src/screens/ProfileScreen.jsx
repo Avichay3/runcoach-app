@@ -225,18 +225,32 @@ function GoalEditor({ value, dateValue, onGoalChange, onDateChange }) {
 }
 
 function ReminderCard({ profile, user, onSave }) {
-  const [enabled, setEnabled] = useState(false)
+  const [enabled, setEnabled] = useState(false)   // is THIS device subscribed
   const [time, setTime] = useState('07:00')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
   const [testing, setTesting] = useState(false)
+  const [checking, setChecking] = useState(true)
 
   useEffect(() => {
-    if (profile) {
-      setEnabled(Boolean(profile.reminder_enabled))
-      setTime(profile.reminder_time || '07:00')
-    }
+    if (profile) setTime(profile.reminder_time || '07:00')
   }, [profile])
+
+  // Push is per-device: the toggle reflects whether THIS device is registered,
+  // not the account-wide flag (otherwise a second device looks "on" but isn't).
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      if (!pushSupported()) { setChecking(false); return }
+      try {
+        const reg = await navigator.serviceWorker.ready
+        const sub = await reg.pushManager.getSubscription()
+        if (active) setEnabled(Boolean(sub))
+      } catch { /* ignore */ }
+      if (active) setChecking(false)
+    })()
+    return () => { active = false }
+  }, [])
 
   const supported = pushSupported()
   const needsInstall = supported && iosNeedsInstall()
@@ -254,9 +268,14 @@ function ReminderCard({ profile, user, onSave }) {
         setMsg({ ok: true, text: `מעולה! תקבל תזכורת יומית בשעה ${time}` })
       } else {
         await disablePush()
-        await onSave({ reminder_enabled: false })
         setEnabled(false)
-        setMsg({ ok: true, text: 'התזכורות כובו' })
+        // Keep account-wide reminders on if other devices are still registered
+        const { count } = await supabase
+          .from('push_subscriptions')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+        await onSave({ reminder_enabled: (count || 0) > 0 })
+        setMsg({ ok: true, text: 'ההתראות כובו במכשיר הזה' })
       }
     } catch (err) {
       setMsg({ ok: false, text: err.message })
@@ -301,7 +320,7 @@ function ReminderCard({ profile, user, onSave }) {
         {supported && !needsInstall && (
           <button
             onClick={toggle}
-            disabled={busy}
+            disabled={busy || checking}
             aria-label="הפעל תזכורות"
             style={{ ...r.switch, ...(enabled ? r.switchOn : {}) }}
           >
@@ -332,7 +351,7 @@ function ReminderCard({ profile, user, onSave }) {
           </button>
         </>
       ) : (
-        <div style={r.hint}>הפעל את המתג כדי לקבל תזכורת יומית. תוכל לבחור את השעה.</div>
+        <div style={r.hint}>הפעל את המתג כדי לקבל תזכורת יומית במכשיר הזה. כל מכשיר (מחשב, פלאפון) צריך הפעלה נפרדת.</div>
       )}
 
       {msg && <div style={{ ...r.msg, color: msg.ok ? 'var(--green-d)' : 'var(--red-d)' }}>{msg.text}</div>}
