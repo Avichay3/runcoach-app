@@ -1,0 +1,10 @@
+# Keep shell scripts and the Gradle wrapper LF so the Linux CI build works
+gradlew text eol=lf
+*.sh text eol=lf
+
+# Never apply line-ending conversion to binaries
+*.jar binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.keystore binary

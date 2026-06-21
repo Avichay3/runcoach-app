@@ -4,6 +4,10 @@ import { useAuth } from '../context/AuthContext'
 import { compressImage } from '../lib/image'
 import { startStravaAuth, syncStrava, stravaConfigured } from '../lib/strava'
 import { enablePush, disablePush, sendTestReminder, pushSupported, iosNeedsInstall } from '../lib/push'
+import {
+  isNative, nativePermissionGranted, enableNativeReminders, disableNativeReminders,
+  scheduleNativeReminders, sendNativeTest,
+} from '../lib/nativeReminders'
 
 const FIELDS_TOP = [
   { id: 'age', label: 'גיל', type: 'number', placeholder: '34' },
@@ -225,7 +229,8 @@ function GoalEditor({ value, dateValue, onGoalChange, onDateChange }) {
 }
 
 function ReminderCard({ profile, user, onSave }) {
-  const [enabled, setEnabled] = useState(false)   // is THIS device subscribed
+  const native = isNative()
+  const [enabled, setEnabled] = useState(false)   // is THIS device set up
   const [time, setTime] = useState('07:00')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
@@ -236,24 +241,31 @@ function ReminderCard({ profile, user, onSave }) {
     if (profile) setTime(profile.reminder_time || '07:00')
   }, [profile])
 
-  // Push is per-device: the toggle reflects whether THIS device is registered,
-  // not the account-wide flag (otherwise a second device looks "on" but isn't).
+  // Reflect whether THIS device is set up. On native that means notification
+  // permission is granted; on web it means a push subscription exists.
+  // (Both are per-device, so we never trust the account-wide flag here.)
   useEffect(() => {
     let active = true
     ;(async () => {
-      if (!pushSupported()) { setChecking(false); return }
       try {
-        const reg = await navigator.serviceWorker.ready
-        const sub = await reg.pushManager.getSubscription()
-        if (active) setEnabled(Boolean(sub))
+        if (native) {
+          const granted = await nativePermissionGranted()
+          if (active) setEnabled(granted)
+          // Keep the on-device schedule fresh every time the app opens.
+          if (granted) await scheduleNativeReminders(user.id, profile?.reminder_time || '07:00')
+        } else if (pushSupported()) {
+          const reg = await navigator.serviceWorker.ready
+          const sub = await reg.pushManager.getSubscription()
+          if (active) setEnabled(Boolean(sub))
+        }
       } catch { /* ignore */ }
       if (active) setChecking(false)
     })()
     return () => { active = false }
-  }, [])
+  }, [native, user, profile?.reminder_time])
 
-  const supported = pushSupported()
-  const needsInstall = supported && iosNeedsInstall()
+  const supported = native || pushSupported()
+  const needsInstall = !native && supported && iosNeedsInstall()
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Jerusalem'
 
   async function toggle() {
@@ -262,19 +274,28 @@ function ReminderCard({ profile, user, onSave }) {
     setBusy(true)
     try {
       if (!enabled) {
-        await enablePush(user.id)
+        if (native) {
+          await enableNativeReminders(user.id, time)
+        } else {
+          await enablePush(user.id)
+        }
         await onSave({ reminder_enabled: true, reminder_time: time, reminder_tz: tz })
         setEnabled(true)
         setMsg({ ok: true, text: `מעולה! תקבל תזכורת יומית בשעה ${time}` })
       } else {
-        await disablePush()
+        if (native) {
+          await disableNativeReminders()
+          await onSave({ reminder_enabled: false })
+        } else {
+          await disablePush()
+          // Keep account-wide reminders on if other devices are still registered
+          const { count } = await supabase
+            .from('push_subscriptions')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', user.id)
+          await onSave({ reminder_enabled: (count || 0) > 0 })
+        }
         setEnabled(false)
-        // Keep account-wide reminders on if other devices are still registered
-        const { count } = await supabase
-          .from('push_subscriptions')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-        await onSave({ reminder_enabled: (count || 0) > 0 })
         setMsg({ ok: true, text: 'ההתראות כובו במכשיר הזה' })
       }
     } catch (err) {
@@ -287,6 +308,7 @@ function ReminderCard({ profile, user, onSave }) {
     setTime(newTime)
     if (enabled) {
       await onSave({ reminder_time: newTime, reminder_tz: tz })
+      if (native) await scheduleNativeReminders(user.id, newTime)
       setMsg({ ok: true, text: `השעה עודכנה ל-${newTime}` })
     }
   }
@@ -295,10 +317,15 @@ function ReminderCard({ profile, user, onSave }) {
     setTesting(true)
     setMsg(null)
     try {
-      const r = await sendTestReminder()
-      setMsg(r.sent > 0
-        ? { ok: true, text: 'נשלחה התראת בדיקה — בדוק את המכשיר' }
-        : { ok: false, text: 'אין מכשיר רשום להתראות. הפעל מחדש את התזכורות.' })
+      if (native) {
+        await sendNativeTest()
+        setMsg({ ok: true, text: 'תוך 3 שניות תופיע התראת בדיקה' })
+      } else {
+        const r = await sendTestReminder()
+        setMsg(r.sent > 0
+          ? { ok: true, text: 'נשלחה התראת בדיקה — בדוק את המכשיר' }
+          : { ok: false, text: 'אין מכשיר רשום להתראות. הפעל מחדש את התזכורות.' })
+      }
     } catch (err) {
       setMsg({ ok: false, text: err.message })
     }
