@@ -3,8 +3,6 @@ name: Build Android APK
 # Builds an installable APK in the cloud — no Android Studio needed.
 # Run it manually from the Actions tab, or it runs on every push to main.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:

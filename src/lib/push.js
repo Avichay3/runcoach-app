@@ -28,6 +28,12 @@ export function iosNeedsInstall() {
   return isIOS() && !isStandalone()
 }
 
+// 'granted' | 'denied' | 'default' | 'unsupported'
+export function notificationPermission() {
+  if (typeof Notification === 'undefined') return 'unsupported'
+  return Notification.permission
+}
+
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
@@ -42,9 +48,13 @@ export async function enablePush(userId) {
   if (!pushSupported()) throw new Error('הדפדפן לא תומך בהתראות')
   if (!VAPID_PUBLIC) throw new Error('חסר מפתח התראות (VAPID) בהגדרות')
   if (iosNeedsInstall()) throw new Error('באייפון יש קודם להוסיף את האפליקציה למסך הבית')
+  if (Notification.permission === 'denied') {
+    throw new Error('blocked')   // ReminderCard shows how to un-block
+  }
 
   const permission = await Notification.requestPermission()
-  if (permission !== 'granted') throw new Error('לא ניתנה הרשאה להתראות במכשיר')
+  if (permission === 'denied') throw new Error('blocked')
+  if (permission !== 'granted') throw new Error('לא אישרת את ההרשאה. נסה שוב ולחץ "אפשר".')
 
   const reg = await navigator.serviceWorker.ready
   let sub = await reg.pushManager.getSubscription()

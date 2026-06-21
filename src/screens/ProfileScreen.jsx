@@ -3,7 +3,8 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { compressImage } from '../lib/image'
 import { startStravaAuth, syncStrava, stravaConfigured } from '../lib/strava'
-import { enablePush, disablePush, sendTestReminder, pushSupported, iosNeedsInstall } from '../lib/push'
+import { enablePush, disablePush, sendTestReminder, pushSupported, iosNeedsInstall, isIOS, isStandalone, notificationPermission } from '../lib/push'
+import { canInstall, onInstallChange, promptInstall } from '../lib/installPrompt'
 import {
   isNative, nativePermissionGranted, enableNativeReminders, disableNativeReminders,
   scheduleNativeReminders, sendNativeTest,
@@ -76,6 +77,7 @@ export default function ProfileScreen({ profile, onSave }) {
   return (
     <div>
       <AvatarCard profile={profile} user={user} onSave={onSave} />
+      <InstallCard />
       <StravaCard profile={profile} />
       <ReminderCard profile={profile} user={user} onSave={onSave} />
 
@@ -228,6 +230,43 @@ function GoalEditor({ value, dateValue, onGoalChange, onDateChange }) {
   )
 }
 
+function InstallCard() {
+  const [installable, setInstallable] = useState(canInstall())
+  useEffect(() => onInstallChange(() => setInstallable(canInstall())), [])
+
+  if (isNative() || isStandalone()) return null   // already an app / installed
+  const ios = isIOS()
+  if (!installable && !ios) return null            // desktop, or Android not ready yet
+
+  return (
+    <div style={r.card}>
+      <div style={r.head}>
+        <div style={{ ...r.icon, background: 'var(--blue)', boxShadow: '0 2px 8px rgba(37,99,235,.35)' }}>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 3v12M7 10l5 5 5-5" /><path d="M5 21h14" />
+          </svg>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={r.title}>התקן את האפליקציה</div>
+          <div style={r.sub}>הוסף למסך הבית — נפתח כמו אפליקציה רגילה</div>
+        </div>
+      </div>
+      {ios ? (
+        <div style={r.notice}>
+          📱 לחץ על כפתור <strong>השיתוף</strong> בתחתית ספארי (ריבוע עם חץ ↑) וגלול ל-<strong>"הוסף למסך הבית"</strong>. כך תקבל אייקון של האפליקציה, ותוכל גם להפעיל התראות.
+        </div>
+      ) : (
+        <button
+          onClick={() => promptInstall()}
+          style={{ width: '100%', marginTop: 4, padding: 11, borderRadius: 'var(--radius-sm)', background: 'var(--teal)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 600 }}
+        >
+          התקן עכשיו
+        </button>
+      )}
+    </div>
+  )
+}
+
 function ReminderCard({ profile, user, onSave }) {
   const native = isNative()
   const [enabled, setEnabled] = useState(false)   // is THIS device set up
@@ -236,6 +275,7 @@ function ReminderCard({ profile, user, onSave }) {
   const [msg, setMsg] = useState(null)
   const [testing, setTesting] = useState(false)
   const [checking, setChecking] = useState(true)
+  const [blocked, setBlocked] = useState(false)   // web: notifications blocked in browser
 
   useEffect(() => {
     if (profile) setTime(profile.reminder_time || '07:00')
@@ -254,6 +294,7 @@ function ReminderCard({ profile, user, onSave }) {
           // Keep the on-device schedule fresh every time the app opens.
           if (granted) await scheduleNativeReminders(user.id, profile?.reminder_time || '07:00')
         } else if (pushSupported()) {
+          if (active) setBlocked(notificationPermission() === 'denied')
           const reg = await navigator.serviceWorker.ready
           const sub = await reg.pushManager.getSubscription()
           if (active) setEnabled(Boolean(sub))
@@ -299,7 +340,11 @@ function ReminderCard({ profile, user, onSave }) {
         setMsg({ ok: true, text: 'ההתראות כובו במכשיר הזה' })
       }
     } catch (err) {
-      setMsg({ ok: false, text: err.message })
+      if (err.message === 'blocked') {
+        setBlocked(true)
+      } else {
+        setMsg({ ok: false, text: err.message })
+      }
     }
     setBusy(false)
   }
@@ -344,7 +389,7 @@ function ReminderCard({ profile, user, onSave }) {
           <div style={r.title}>תזכורת אימון יומית</div>
           <div style={r.sub}>התראה לפלאפון עם האימון של היום</div>
         </div>
-        {supported && !needsInstall && (
+        {supported && !needsInstall && !blocked && (
           <button
             onClick={toggle}
             disabled={busy || checking}
@@ -361,6 +406,16 @@ function ReminderCard({ profile, user, onSave }) {
       ) : needsInstall ? (
         <div style={r.notice}>
           📱 כדי לקבל התראות באייפון: פתח את האפליקציה בספארי, לחץ על <strong>שיתוף</strong> (הריבוע עם החץ) ואז <strong>הוסף למסך הבית</strong>. פתח את האפליקציה מהמסך הבית והפעל את התזכורת כאן.
+        </div>
+      ) : blocked ? (
+        <div style={r.notice}>
+          🔔 ההתראות חסומות בדפדפן. כדי לפתוח: לחץ על <strong>{isIOS() ? 'אייקון ה-aA בשורת הכתובת' : 'המנעול 🔒 משמאל לכתובת'}</strong> → <strong>הרשאות</strong> → <strong>התראות</strong> → <strong>אפשר</strong>. אחר כך טען מחדש את הדף.
+          <button
+            style={{ ...r.testBtn, marginTop: 10 }}
+            onClick={() => { setBlocked(notificationPermission() === 'denied'); if (notificationPermission() !== 'denied') setMsg({ ok: true, text: 'מצוין! עכשיו הפעל את המתג.' }) }}
+          >
+            בדקתי — נסה שוב
+          </button>
         </div>
       ) : enabled ? (
         <>
