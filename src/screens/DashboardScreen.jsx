@@ -12,9 +12,8 @@ const CHART_WEEKS = 8
 export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
   const { user } = useAuth()
   const [updates, setUpdates] = useState([])
-  const [weekKm, setWeekKm] = useState(0)
-  const [completed, setCompleted] = useState(0)
-  const [planned, setPlanned] = useState(0)
+  const [actualKm, setActualKm] = useState(0)        // km actually run this week
+  const [runsThisWeek, setRunsThisWeek] = useState(0)
   const [weeklyData, setWeeklyData] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -26,28 +25,30 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
     const { data: ups } = await supabase
       .from('daily_updates').select('*').eq('user_id', user.id)
       .order('created_at', { ascending: false }).limit(60)
-    setUpdates(ups || [])
+    const list = ups || []
+    setUpdates(list)
 
     // Build the weekly km chart from actual logged runs (Strava)
-    buildWeekly(ups || [])
+    buildWeekly(list)
 
-    const ws = weekKeyDate(0)
-    const { data: plan } = await supabase.from('training_plans').select('id').eq('user_id', user.id).eq('week_start', ws).maybeSingle()
-    if (plan) {
-      const { data: wkts } = await supabase.from('workouts').select('*').eq('plan_id', plan.id)
-      if (wkts) {
-        setWeekKm(Math.round(wkts.reduce((s, w) => s + (Number(w.distance_km) || 0), 0) * 10) / 10)
-        setCompleted(wkts.filter(w => w.completed).length)
-        setPlanned(wkts.length)
-      }
-    }
+    // Actual runs in the current Monday→Sunday week (real data, not the plan)
+    const weekStart = weekKeyDate(0)
+    const nextWeek = weekKeyDate(1)
+    const thisWeek = list.filter(u => {
+      const d = u.update_date || (u.created_at || '').slice(0, 10)
+      return d >= weekStart && d < nextWeek
+    })
+    setActualKm(Math.round(thisWeek.reduce((s, u) => s + (Number(u.distance_km) || 0), 0) * 10) / 10)
+    setRunsThisWeek(thisWeek.length)
     setLoading(false)
   }
 
   function buildWeekly(ups) {
     const byWeek = {}
     ups.forEach(u => {
-      const k = getWeekStart(new Date(u.created_at))
+      const dateStr = u.update_date || (u.created_at || '').slice(0, 10)
+      if (!dateStr) return
+      const k = getWeekStart(new Date(dateStr + 'T00:00:00'))
       byWeek[k] = (byWeek[k] || 0) + (Number(u.distance_km) || 0)
     })
     const weeks = []
@@ -77,8 +78,9 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
   }
 
   const target = Number(profile.weekly_km) || 50
-  const kmPct = Math.min(100, Math.round((weekKm / target) * 100))
-  const planPct = planned ? Math.round((completed / planned) * 100) : 0
+  const kmPct = Math.min(100, Math.round((actualKm / target) * 100))
+  const runGoal = Number(profile.runs_per_week) || 0
+  const runsPct = runGoal ? Math.min(100, Math.round((runsThisWeek / runGoal) * 100)) : 0
   const daysToGoal = profile.target_date
     ? Math.max(0, Math.ceil((new Date(profile.target_date) - new Date()) / (1000 * 60 * 60 * 24)))
     : '—'
@@ -103,16 +105,16 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
           color="var(--blue)"
           colorL="var(--blue-l)"
           label='ק"מ השבוע'
-          val={weekKm}
+          val={actualKm}
           sub={`יעד: ${target} ק"מ`}
         />
         <Kpi
           icon={<CheckIcon />}
           color="var(--green)"
           colorL="var(--green-l)"
-          label="אימונים"
-          val={<>{completed}<span style={{ fontSize: 13, fontWeight: 400, color: 'var(--text3)' }}>/{planned}</span></>}
-          sub="השבוע"
+          label="ריצות השבוע"
+          val={runGoal ? <>{runsThisWeek}<span style={{ fontSize: 13, fontWeight: 400, color: 'var(--text3)' }}>/{runGoal}</span></> : runsThisWeek}
+          sub="בפועל"
         />
         <Kpi
           icon={<CalIcon />}
@@ -165,8 +167,10 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
       {/* Weekly progress bars */}
       <div className="card">
         <div className="section-label">התקדמות שבועית</div>
-        <GoalBar label='עומס ק"מ' pct={kmPct} nums={`${weekKm} / ${target}`} color="var(--teal)" />
-        <GoalBar label="עמידה בתוכנית" pct={planPct} nums={`${completed} / ${planned}`} color="var(--blue)" />
+        <GoalBar label='ק"מ שרצתי' pct={kmPct} nums={`${actualKm} / ${target}`} color="var(--teal)" />
+        {runGoal > 0 && (
+          <GoalBar label="ריצות שביצעתי" pct={runsPct} nums={`${runsThisWeek} / ${runGoal}`} color="var(--blue)" />
+        )}
       </div>
 
       {/* Weekly km chart */}
@@ -382,7 +386,7 @@ function GoalBar({ label, pct, nums, color }) {
     <div style={{ marginBottom: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
         <span style={{ fontSize: 13, color: 'var(--text2)' }}>{label}</span>
-        <span style={{ fontSize: 12, color: 'var(--text3)' }}>{nums} · <strong style={{ color }}>{pct}%</strong></span>
+        <span style={{ fontSize: 12, color: 'var(--text3)' }}><span style={{ direction: 'ltr', unicodeBidi: 'isolate', display: 'inline-block' }}>{nums}</span> · <strong style={{ color }}>{pct}%</strong></span>
       </div>
       <div style={{ height: 7, background: 'var(--surface2)', borderRadius: 4, overflow: 'hidden' }}>
         <div style={{ height: '100%', borderRadius: 4, width: `${pct}%`, background: color, transition: 'width .6s ease' }} />
