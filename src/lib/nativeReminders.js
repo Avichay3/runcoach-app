@@ -1,7 +1,7 @@
 import { Capacitor } from '@capacitor/core'
 import { LocalNotifications } from '@capacitor/local-notifications'
 import { supabase } from './supabase'
-import { weekKeyDate } from './constants'
+import { weekKeyDate, dateOfWorkout } from './constants'
 
 // True only inside the Capacitor Android/iOS app (not the website).
 export function isNative() {
@@ -95,8 +95,7 @@ async function loadUpcomingWorkouts(userId) {
   for (const w of wkts || []) {
     const ws = weekStartByPlan[w.plan_id]
     if (!ws) continue
-    const d = new Date(ws + 'T00:00:00')
-    d.setDate(d.getDate() + w.day_of_week)
+    const d = dateOfWorkout(ws, w.day_of_week)
     const label = TYPE_LABELS[w.type] || w.type
     let text = `היום: ${label}`
     if (w.distance_km) text += ` · ${w.distance_km} ק"מ`

@@ -26,20 +26,49 @@ export function goalToText(goalStr) {
   return goalStr
 }
 
-export function weekKeyDate(offset = 0) {
-  const d = new Date()
-  d.setDate(d.getDate() - d.getDay() + offset * 7)
-  return d.toISOString().slice(0, 10)
+// The training week runs Monday → Sunday (matches Strava).
+// day_of_week stays JS getDay() convention: 0=Sunday … 6=Saturday.
+
+// Local YYYY-MM-DD (avoids the UTC drift that toISOString would introduce).
+export function localYMD(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-export function weekDates(offset = 0) {
-  const arr = []
+// The Monday that starts the week containing today (+ offset weeks).
+function mondayOfWeek(offset = 0) {
   const d = new Date()
-  d.setDate(d.getDate() - d.getDay() + offset * 7)
+  d.setHours(0, 0, 0, 0)
+  const day = d.getDay()                     // 0=Sun … 6=Sat
+  const toMonday = day === 0 ? -6 : 1 - day   // Sunday belongs to the week that just ended
+  d.setDate(d.getDate() + toMonday + offset * 7)
+  return d
+}
+
+// week_start key (the Monday) as local YYYY-MM-DD.
+export function weekKeyDate(offset = 0) {
+  return localYMD(mondayOfWeek(offset))
+}
+
+// 7 dates, Monday → Sunday.
+export function weekDates(offset = 0) {
+  const start = mondayOfWeek(offset)
+  const arr = []
   for (let i = 0; i < 7; i++) {
-    const x = new Date(d)
-    x.setDate(d.getDate() + i)
+    const x = new Date(start)
+    x.setDate(start.getDate() + i)
     arr.push(x)
   }
   return arr
+}
+
+// Actual date of a workout from its week_start (Monday) + day_of_week (0=Sun…6=Sat).
+export function dateOfWorkout(weekStart, dayOfWeek) {
+  const d = new Date(weekStart + 'T00:00:00')
+  d.setDate(d.getDate() + ((dayOfWeek + 6) % 7))
+  return d
+}
+
+// Rank a day_of_week for Monday→Sunday ordering (Mon=0 … Sun=6).
+export function dayOrder(dayOfWeek) {
+  return (dayOfWeek + 6) % 7
 }

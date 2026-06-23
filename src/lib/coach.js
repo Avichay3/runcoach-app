@@ -188,7 +188,9 @@ ${paceZones ? `
 
 ━━ תוכנית שבועית מלאה לשיבוץ ━━
 
-כשהספורטאי מבקש תוכנית לכל השבוע (למשל "בנה לי תוכנית לשבוע הקרוב"), כתוב קודם את התוכנית בפורמט הימים הקריא (כמו למעלה — בלוק לכל יום + שורת סיכום). ואז, בשורה נפרדת בסוף ההודעה, הוסף את הפקודה הבאה שתאפשר שיבוץ בלחיצה אחת — כל 7 הימים במערך אחד:
+חשוב: שבוע האימונים מתחיל ביום שני בבוקר ומסתיים ביום ראשון בלילה (כמו ב-Strava). תמיד סדר את התוכנית לפי הסדר הזה: שני → שלישי → רביעי → חמישי → שישי → שבת → ראשון.
+
+כשהספורטאי מבקש תוכנית לכל השבוע (למשל "בנה לי תוכנית לשבוע הקרוב"), כתוב קודם את התוכנית בפורמט הימים הקריא (כמו למעלה — בלוק לכל יום + שורת סיכום), מיום שני ועד יום ראשון. ואז, בשורה נפרדת בסוף ההודעה, הוסף את הפקודה הבאה שתאפשר שיבוץ בלחיצה אחת — כל 7 הימים במערך אחד:
 
 @@WEEKPLAN:{"week":0,"days":[{"day":0,"type":"rest"},{"day":1,"type":"easy","distance_km":8,"note":"בסיס אירובי"},{"day":2,"type":"interval","distance_km":10,"note":"6×800מ"},{"day":3,"type":"rest"},{"day":4,"type":"easy","distance_km":7,"note":""},{"day":5,"type":"rest"},{"day":6,"type":"long","distance_km":18,"note":"סיבולת"}]}@@
 
@@ -311,9 +313,11 @@ ATL 7 ימים: ${Math.round(atl * 10) / 10}ק"מ | CTL ממוצע שבועי (4
 
 function getWeekStart(date) {
   const d = new Date(date)
-  d.setDate(d.getDate() - d.getDay())
   d.setHours(0, 0, 0, 0)
-  return d.toISOString().slice(0, 10)
+  const day = d.getDay()                     // 0=Sun … 6=Sat
+  const toMonday = day === 0 ? -6 : 1 - day    // training week is Monday → Sunday
+  d.setDate(d.getDate() + toMonday)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 // ── Pace zone calculator ──────────────────────────────

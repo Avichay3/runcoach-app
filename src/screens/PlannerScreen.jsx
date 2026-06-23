@@ -75,8 +75,10 @@ export default function PlannerScreen({ profile, onSendToCoach }) {
   const pct = Math.min(100, Math.round((totalKm / target) * 100))
 
   function sendToCoach() {
-    const lines = DAYS_HE.map((name, i) => {
-      const ws = byDay(i)
+    const lines = dates.map(date => {
+      const day = date.getDay()
+      const name = DAYS_HE[day]
+      const ws = byDay(day)
       if (!ws.length) return `${name}: מנוחה`
       return `${name}: ` + ws.map(w => {
         const t = (WORKOUT_TYPES[w.type] || WORKOUT_TYPES.easy).label
@@ -105,19 +107,20 @@ export default function PlannerScreen({ profile, onSendToCoach }) {
 
       <div style={styles.grid}>
         {dates.map((date, i) => {
+          const day = date.getDay()   // 0=Sun … 6=Sat — the real day_of_week
           return (
             <div key={i} style={styles.col}>
               <div style={styles.dayHead}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)' }}>{DAYS_HE[i]}</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)' }}>{DAYS_HE[day]}</div>
                 <div style={{ fontSize: 11, color: 'var(--text3)' }}>{fmt(date)}</div>
               </div>
               <div style={styles.drop}>
-                {byDay(i).map(w => {
+                {byDay(day).map(w => {
                   const t = WORKOUT_TYPES[w.type] || WORKOUT_TYPES.easy
                   return (
                     <div key={w.id} style={{ ...styles.wkt, background: t.bg, color: t.text, border: `0.5px solid ${t.border}`, opacity: w.completed ? .55 : 1 }}>
                       <button style={styles.wktX} onClick={() => removeWorkout(w.id)} aria-label="הסר">✕</button>
-                      <button style={styles.wktBody} onClick={() => setModal({ day: i, workout: w })} aria-label="ערוך אימון">
+                      <button style={styles.wktBody} onClick={() => setModal({ day, workout: w })} aria-label="ערוך אימון">
                         <div style={{ fontWeight: 600, marginBottom: 2 }}>{t.label}</div>
                         <div style={{ opacity: .85, lineHeight: 1.35 }}>
                           {w.distance_km ? `${w.distance_km}ק"מ` : ''}{w.distance_km && w.duration_min ? ' · ' : ''}{w.duration_min ? `${w.duration_min}ד` : ''}
@@ -128,7 +131,7 @@ export default function PlannerScreen({ profile, onSendToCoach }) {
                     </div>
                   )
                 })}
-                <button style={styles.addDay} onClick={() => setModal({ day: i })}>+</button>
+                <button style={styles.addDay} onClick={() => setModal({ day })}>+</button>
               </div>
             </div>
           )

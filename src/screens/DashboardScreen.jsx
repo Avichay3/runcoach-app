@@ -344,9 +344,11 @@ function secToMs(sec) {
 
 function getWeekStart(date) {
   const d = new Date(date)
-  d.setDate(d.getDate() - d.getDay())
   d.setHours(0, 0, 0, 0)
-  return d.toISOString().slice(0, 10)
+  const day = d.getDay()                    // 0=Sun … 6=Sat
+  const toMonday = day === 0 ? -6 : 1 - day  // week runs Monday → Sunday
+  d.setDate(d.getDate() + toMonday)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 function formatWeekLabel(date) {
   return `${date.getDate()}/${date.getMonth() + 1}`

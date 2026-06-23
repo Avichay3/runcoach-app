@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { callCoach, buildSystemPrompt, updateCoachMemory } from '../lib/coach'
 import { compressImage } from '../lib/image'
-import { DAYS_HE, WORKOUT_TYPES, weekKeyDate, goalToText } from '../lib/constants'
+import { DAYS_HE, WORKOUT_TYPES, weekKeyDate, goalToText, dayOrder } from '../lib/constants'
 
 // How many recent messages to send to the coach for conversational context.
 // Set high so the coach effectively remembers the whole relationship; the
@@ -362,7 +362,7 @@ function WeekPlanConfirmCard({ weekPlan, onApprove, onReject }) {
 
   const ordered = [...days]
     .filter(d => d && Number.isInteger(d.day))
-    .sort((a, b) => a.day - b.day)
+    .sort((a, b) => dayOrder(a.day) - dayOrder(b.day))
   const totalKm = ordered.reduce((s, d) => s + (Number(d.distance_km) || 0), 0)
   const runDays = ordered.filter(d => d.type && d.type !== 'rest').length
 
