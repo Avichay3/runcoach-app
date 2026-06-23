@@ -5,6 +5,7 @@ import { supabase } from './lib/supabase'
 import { weekKeyDate } from './lib/constants'
 import { exchangeStravaCode, syncStrava } from './lib/strava'
 import { runProactiveCheck } from './lib/proactive'
+import { runPerRunFeedback } from './lib/runFeedback'
 import AuthScreen from './screens/AuthScreen'
 import DashboardScreen from './screens/DashboardScreen'
 import PlannerScreen from './screens/PlannerScreen'
@@ -55,6 +56,7 @@ export default function App() {
   const [stravaToast, setStravaToast] = useState(null)
   const [coachUnread, setCoachUnread] = useState(false)
   const proactiveRan = useRef(false)
+  const stravaFeedbackRan = useRef(false)
 
   useEffect(() => {
     if (session) loadWeeklyKm()
@@ -67,6 +69,18 @@ export default function App() {
     runProactiveCheck({ user: session.user, profile, weeklyKm }).then(({ posted }) => {
       if (posted) setCoachUnread(true)
     })
+  }, [session, profile, weeklyKm])
+
+  // Auto-sync Strava on app open; the coach comments on any genuinely new run.
+  useEffect(() => {
+    if (!session || !profile || stravaFeedbackRan.current) return
+    if (!profile.strava_athlete_id) return
+    stravaFeedbackRan.current = true
+    ;(async () => {
+      try { await syncStrava() } catch { /* token may need reconnect — skip quietly */ }
+      const { posted } = await runPerRunFeedback({ user: session.user, profile, weeklyKm })
+      if (posted) setCoachUnread(true)
+    })()
   }, [session, profile, weeklyKm])
 
   // Clear the badge when the user opens the coach
