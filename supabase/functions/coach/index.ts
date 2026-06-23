@@ -37,7 +37,7 @@ Deno.serve(async (req: Request) => {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 650,
+        max_tokens: 1024,
         system: typeof system === "string" ? system : undefined,
         messages: cleaned,
       }),
