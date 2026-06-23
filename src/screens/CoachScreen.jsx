@@ -124,8 +124,8 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
     try {
       const history = next.slice(-CONTEXT_MESSAGES).map((m, idx, arr) => buildApiMessage(m, idx === arr.length - 1))
       const reply = await callCoach(history, buildSystemPrompt(profile, weeklyKm, trainingHistory, coachMemory))
-      const { clean, planData } = extractPlanEdit(reply)
-      setMessages(prev => [...prev, { role: 'assistant', content: clean, planData }])
+      const { clean, planData, weekPlan } = extractPlanEdit(reply)
+      setMessages(prev => [...prev, { role: 'assistant', content: clean, planData, weekPlan }])
       await persist('assistant', clean)
       refreshMemory(trimmed || '[תמונה]', clean)
     } catch {
@@ -175,6 +175,29 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
     setAppliedPlanIds(prev => new Set([...prev, msgIdx]))
   }
 
+  // Replace the entire week with the coach's proposed plan.
+  async function applyWeekPlan(weekPlan, msgIdx) {
+    const { week = 0, days = [] } = weekPlan
+    const weekStart = weekKeyDate(week)
+    let { data: plan } = await supabase.from('training_plans').select('id')
+      .eq('user_id', user.id).eq('week_start', weekStart).maybeSingle()
+    if (!plan) {
+      const { data: created } = await supabase.from('training_plans')
+        .insert({ user_id: user.id, week_start: weekStart, target_km: profile?.weekly_km || 50 })
+        .select().single()
+      plan = created
+    }
+    await supabase.from('workouts').delete().eq('plan_id', plan.id)
+    const rows = days
+      .filter(d => d && d.type && d.type !== 'rest' && Number.isInteger(d.day))
+      .map(d => ({
+        plan_id: plan.id, user_id: user.id, day_of_week: d.day,
+        type: d.type, distance_km: d.distance_km || null, note: d.note || null,
+      }))
+    if (rows.length) await supabase.from('workouts').insert(rows)
+    setAppliedPlanIds(prev => new Set([...prev, msgIdx]))
+  }
+
   return (
     <>
     <style>{`
@@ -211,6 +234,13 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
                 {m.content && (m.role === 'user' ? m.content : <CoachMarkdown content={m.content} />)}
               </div>
             </div>
+            {m.weekPlan && !appliedPlanIds.has(i) && (
+              <WeekPlanConfirmCard
+                weekPlan={m.weekPlan}
+                onApprove={() => applyWeekPlan(m.weekPlan, i)}
+                onReject={() => setAppliedPlanIds(prev => new Set([...prev, i]))}
+              />
+            )}
             {m.planData && !appliedPlanIds.has(i) && (
               <PlanConfirmCard
                 planData={m.planData}
@@ -270,17 +300,26 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
   )
 }
 
-// Extract @@PLAN:{...}@@ from coach reply, return clean text + parsed plan data
+// Extract @@WEEKPLAN:{...}@@ (full week) and @@PLAN:{...}@@ (single day)
+// from the coach reply, returning the clean text plus whatever was parsed.
 function extractPlanEdit(content) {
-  const match = content.match(/@@PLAN:([\s\S]*?)@@/)
-  if (!match) return { clean: content, planData: null }
-  try {
-    const planData = JSON.parse(match[1].trim())
-    const clean = content.replace(/\n?@@PLAN:[\s\S]*?@@/g, '').trim()
-    return { clean, planData }
-  } catch {
-    return { clean: content, planData: null }
+  let clean = content
+  let planData = null
+  let weekPlan = null
+
+  const wk = clean.match(/@@WEEKPLAN:([\s\S]*?)@@/)
+  if (wk) {
+    try { weekPlan = JSON.parse(wk[1].trim()) } catch { /* ignore malformed */ }
+    clean = clean.replace(/\n?@@WEEKPLAN:[\s\S]*?@@/g, '').trim()
   }
+
+  const pl = clean.match(/@@PLAN:([\s\S]*?)@@/)
+  if (pl) {
+    try { planData = JSON.parse(pl[1].trim()) } catch { /* ignore malformed */ }
+    clean = clean.replace(/\n?@@PLAN:[\s\S]*?@@/g, '').trim()
+  }
+
+  return { clean, planData, weekPlan }
 }
 
 function PlanConfirmCard({ planData, onApprove, onReject }) {
@@ -314,6 +353,69 @@ function PlanConfirmCard({ planData, onApprove, onReject }) {
       </div>
     </div>
   )
+}
+
+function WeekPlanConfirmCard({ weekPlan, onApprove, onReject }) {
+  const { week = 0, days = [] } = weekPlan
+  const weekLabel = week === 0 ? 'שבוע זה' : 'שבוע הבא'
+  const [done, setDone] = useState(null)
+
+  const ordered = [...days]
+    .filter(d => d && Number.isInteger(d.day))
+    .sort((a, b) => a.day - b.day)
+  const totalKm = ordered.reduce((s, d) => s + (Number(d.distance_km) || 0), 0)
+  const runDays = ordered.filter(d => d.type && d.type !== 'rest').length
+
+  if (done === 'approved') return (
+    <div style={planCard.wrap}>
+      <span style={{ color: 'var(--green-d)', fontWeight: 600, fontSize: 13 }}>✓ התוכנית השבועית שובצה!</span>
+    </div>
+  )
+  if (done === 'rejected') return null
+
+  return (
+    <div style={planCard.wrap}>
+      <div style={planCard.title}>המאמן מציע תוכנית ל{weekLabel}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
+        {ordered.map((d, idx) => {
+          const dayName = DAYS_HE[d.day] ?? `יום ${d.day}`
+          const isRest = !d.type || d.type === 'rest'
+          const meta = WORKOUT_TYPES[d.type] || { label: d.type }
+          return (
+            <div key={idx} style={weekRow.row}>
+              <span style={weekRow.day}>{dayName}</span>
+              {isRest ? (
+                <span style={weekRow.rest}>מנוחה</span>
+              ) : (
+                <>
+                  <span style={{ ...weekRow.badge, background: meta.bg || 'var(--surface2)', color: meta.text || 'var(--text2)' }}>{meta.label}</span>
+                  {d.distance_km > 0 && <span style={weekRow.km}>{d.distance_km} ק"מ</span>}
+                </>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10, fontWeight: 600 }}>
+        סה"כ: {runDays} אימונים · {Math.round(totalKm * 10) / 10} ק"מ
+      </div>
+      <div style={{ fontSize: 11.5, color: 'var(--text3)', marginBottom: 10 }}>
+        אישור ישבץ את כל השבוע בתוכנית שלך (יחליף את הקיים). תוכל לערוך ידנית אחר כך.
+      </div>
+      <div style={planCard.btns}>
+        <button style={planCard.btnApprove} onClick={() => { onApprove(); setDone('approved') }}>✓ שבץ בתוכנית</button>
+        <button style={planCard.btnReject} onClick={() => { onReject(); setDone('rejected') }}>✗ דחה</button>
+      </div>
+    </div>
+  )
+}
+
+const weekRow = {
+  row: { display: 'flex', alignItems: 'center', gap: 8 },
+  day: { fontSize: 12.5, fontWeight: 700, width: 48, flexShrink: 0 },
+  rest: { fontSize: 12, color: 'var(--text3)' },
+  badge: { fontSize: 11.5, fontWeight: 600, padding: '2px 9px', borderRadius: 20 },
+  km: { fontSize: 12, color: 'var(--text2)', fontWeight: 600 },
 }
 
 const planCard = {
