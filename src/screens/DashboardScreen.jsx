@@ -17,12 +17,29 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
   const [weeklyData, setWeeklyData] = useState([])
   const [loading, setLoading] = useState(true)
   const [checkIn, setCheckIn] = useState(null)   // the run being checked in
+  const [addRun, setAddRun] = useState(false)
 
   useEffect(() => { load() }, [user])
 
   async function saveCheckIn(id, fields) {
     const { data } = await supabase.from('daily_updates').update(fields).eq('id', id).select().single()
     if (data) setUpdates(prev => prev.map(u => (u.id === id ? data : u)))
+    return data
+  }
+
+  async function deleteRun(id) {
+    await supabase.from('daily_updates').delete().eq('id', id)
+    load()
+  }
+
+  async function saveNewRun(fields) {
+    const { data } = await supabase.from('daily_updates').insert({
+      user_id: user.id,
+      source: 'manual',
+      coached: false,
+      ...fields,
+    }).select().single()
+    load()
     return data
   }
 
@@ -239,46 +256,56 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
       </div>
 
       {/* Recent updates */}
-      {updates.length > 0 ? (
-        <div className="card">
-          <div className="section-label">דיווחים אחרונים</div>
-          {updates.slice(0, 5).map(u => {
-            const d = new Date(u.update_date || u.created_at)
-            const meta = []
-            if (u.fatigue) meta.push(`מאמץ ${u.fatigue}/10`)
-            if (u.pain) meta.push(`כאב ${u.pain}/10`)
-            return (
-              <button key={u.id} style={styles.updateRow} onClick={() => setCheckIn(u)}>
-                <div style={styles.updateDot}>
-                  <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="var(--teal)" strokeWidth="2" strokeLinecap="round">
-                    <circle cx="8" cy="8" r="5.5" />
-                  </svg>
+      <div className="card">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div className="section-label" style={{ marginBottom: 0 }}>דיווחים אחרונים</div>
+          <button style={styles.addRunBtn} onClick={() => setAddRun(true)}>+ הוסף ריצה</button>
+        </div>
+        {updates.length > 0 ? updates.slice(0, 8).map(u => {
+          const d = new Date(u.update_date || u.created_at)
+          const meta = []
+          if (u.fatigue) meta.push(`מאמץ ${u.fatigue}/10`)
+          if (u.pain) meta.push(`כאב ${u.pain}/10`)
+          const isManual = u.source === 'manual'
+          return (
+            <div key={u.id} style={styles.updateRow}>
+              <div style={styles.updateDot}>
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke={isManual ? 'var(--blue)' : 'var(--teal)'} strokeWidth="2" strokeLinecap="round">
+                  <circle cx="8" cy="8" r="5.5" />
+                </svg>
+              </div>
+              <div style={{ flex: 1, textAlign: 'right', cursor: 'pointer' }} onClick={() => setCheckIn(u)}>
+                <div style={{ fontSize: 13, color: 'var(--text)' }}>
+                  {u.distance_km ? `${u.distance_km} ק"מ` : 'ריצה'}{u.time_text ? ` · ${u.time_text}` : ''}
+                  {u.feel ? ` · ${FEEL_LABELS[u.feel]}` : ''}
+                  {isManual && <span style={{ fontSize: 10, color: 'var(--blue)', marginRight: 5, fontWeight: 600 }}>ידני</span>}
                 </div>
-                <div style={{ flex: 1, textAlign: 'right' }}>
-                  <div style={{ fontSize: 13, color: 'var(--text)' }}>
-                    {u.distance_km ? `${u.distance_km} ק"מ` : 'ריצה'}{u.time_text ? ` · ${u.time_text}` : ''}
-                    {u.feel ? ` · ${FEEL_LABELS[u.feel]}` : ''}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-                    {d.getDate()}/{d.getMonth() + 1}{meta.length ? ` · ${meta.join(' · ')}` : ''}
-                  </div>
+                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+                  {d.getDate()}/{d.getMonth() + 1}{meta.length ? ` · ${meta.join(' · ')}` : ''}
                 </div>
-                {u.feel ? (
-                  <span style={{ fontSize: 16, color: 'var(--text3)' }}>›</span>
-                ) : (
-                  <span style={styles.addPill}>הוסף פרטים</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {!u.feel && (
+                  <span style={styles.addPill} onClick={() => setCheckIn(u)}>הוסף פרטים</span>
                 )}
-              </button>
-            )
-          })}
-        </div>
-      ) : (
-        <div className="card" style={{ textAlign: 'center', padding: 28 }}>
-          <div style={{ fontSize: 28, marginBottom: 8 }}>✏️</div>
-          <div style={{ fontSize: 14, color: 'var(--text2)', marginBottom: 4 }}>עדיין אין דיווחים</div>
-          <div style={{ fontSize: 13, color: 'var(--text3)' }}>הריצות יופיעו כאן אוטומטית אחרי סנכרון Strava</div>
-        </div>
-      )}
+                <button
+                  style={styles.deleteBtn}
+                  onClick={() => {
+                    if (window.confirm('למחוק ריצה זו מהרשימה?')) deleteRun(u.id)
+                  }}
+                  title="מחק ריצה"
+                >
+                  <TrashIcon />
+                </button>
+              </div>
+            </div>
+          )
+        }) : (
+          <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 13, color: 'var(--text3)' }}>
+            עדיין אין ריצות. הוסף ידנית או חבר Strava.
+          </div>
+        )}
+      </div>
 
       {/* Quick ask */}
       <div className="card">
@@ -307,6 +334,12 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
           onClose={() => setCheckIn(null)}
           onSave={saveCheckIn}
           onTellCoach={tellCoach}
+        />
+      )}
+      {addRun && (
+        <AddRunModal
+          onClose={() => setAddRun(false)}
+          onSave={saveNewRun}
         />
       )}
     </div>
@@ -388,6 +421,69 @@ function CheckInModal({ run, onClose, onSave, onTellCoach }) {
           <button style={ci.btnGhost} onClick={() => save(true)} disabled={saving}>שמור וספר למאמן</button>
           <button style={ci.btnPrimary} onClick={() => save(false)} disabled={saving}>
             {saving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : 'שמור'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AddRunModal({ onClose, onSave }) {
+  const today = localYMD(new Date())
+  const [date, setDate] = useState(today)
+  const [km, setKm] = useState('')
+  const [duration, setDuration] = useState('')
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function save() {
+    if (!km || isNaN(Number(km)) || Number(km) <= 0) { setError('הכנס קילומטראז\' תקין'); return }
+    setSaving(true)
+    setError('')
+    await onSave({
+      update_date: date,
+      distance_km: Math.round(Number(km) * 100) / 100,
+      time_text: duration.trim() || null,
+      free_note: note.trim() || null,
+    })
+    setSaving(false)
+    onClose()
+  }
+
+  return (
+    <div style={ci.bg} onClick={onClose}>
+      <div style={ci.modal} onClick={e => e.stopPropagation()}>
+        <div style={ci.title}>הוסף ריצה ידנית</div>
+        <div style={ci.sub}>הריצה תתווסף לסטטיסטיקה ולדשבורד</div>
+
+        <div style={ci.field}>
+          <label style={ci.label}>תאריך</label>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} style={ci.input} max={today} />
+        </div>
+
+        <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ ...ci.field, flex: 1 }}>
+            <label style={ci.label}>מרחק (ק"מ)</label>
+            <input type="number" inputMode="decimal" placeholder="10.5" value={km} onChange={e => setKm(e.target.value)} style={ci.input} />
+          </div>
+          <div style={{ ...ci.field, flex: 1 }}>
+            <label style={ci.label}>זמן (לא חובה)</label>
+            <input type="text" placeholder="50:30" value={duration} onChange={e => setDuration(e.target.value)} style={ci.input} />
+          </div>
+        </div>
+
+        <div style={ci.field}>
+          <label style={ci.label}>הערה (לא חובה)</label>
+          <textarea rows={2} placeholder="סוג ריצה, תחושה כללית..." value={note} onChange={e => setNote(e.target.value)} style={ci.input} />
+        </div>
+
+        {error && <div style={{ color: 'var(--red)', fontSize: 12, marginBottom: 10 }}>{error}</div>}
+
+        <div style={ci.btns}>
+          <button style={ci.btnGhost} onClick={onClose} disabled={saving}>ביטול</button>
+          <button style={ci.btnPrimary} onClick={save} disabled={saving}>
+            {saving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : 'שמור ריצה'}
           </button>
         </div>
       </div>
@@ -547,6 +643,14 @@ function GoalBar({ label, pct, nums, color }) {
   )
 }
 
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 4h12M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M6 7v5M10 7v5M3 4l1 9a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-9" />
+    </svg>
+  )
+}
+
 function TrophyIcon() {
   return (
     <svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -618,11 +722,31 @@ const styles = {
     gap: 10,
     padding: '9px 2px',
     width: '100%',
-    background: 'none',
-    border: 'none',
     borderBottom: '1px solid var(--border)',
-    cursor: 'pointer',
     textAlign: 'right',
+  },
+  deleteBtn: {
+    padding: '5px 7px',
+    borderRadius: 7,
+    border: '1px solid var(--border2)',
+    background: 'transparent',
+    color: 'var(--text3)',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    transition: 'color .15s, background .15s',
+  },
+  addRunBtn: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: 'var(--teal-d)',
+    background: 'var(--teal-l)',
+    border: 'none',
+    borderRadius: 20,
+    padding: '5px 12px',
+    cursor: 'pointer',
   },
   nudge: {
     display: 'flex',
