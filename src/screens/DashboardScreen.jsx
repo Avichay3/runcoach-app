@@ -5,7 +5,7 @@ import {
 } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { weekKeyDate, FEEL_LABELS, goalToText } from '../lib/constants'
+import { weekKeyDate, FEEL_LABELS, goalToText, localYMD } from '../lib/constants'
 
 const CHART_WEEKS = 8
 
@@ -16,8 +16,27 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
   const [runsThisWeek, setRunsThisWeek] = useState(0)
   const [weeklyData, setWeeklyData] = useState([])
   const [loading, setLoading] = useState(true)
+  const [checkIn, setCheckIn] = useState(null)   // the run being checked in
 
   useEffect(() => { load() }, [user])
+
+  async function saveCheckIn(id, fields) {
+    const { data } = await supabase.from('daily_updates').update(fields).eq('id', id).select().single()
+    if (data) setUpdates(prev => prev.map(u => (u.id === id ? data : u)))
+    return data
+  }
+
+  function tellCoach(run, fields) {
+    const km = run.distance_km ? `${run.distance_km} ק"מ` : 'ריצה'
+    const date = (run.update_date || '').split('-').reverse().slice(0, 2).join('/')
+    const bits = []
+    if (fields.feel) bits.push(`הרגשה ${FEEL_LABELS[fields.feel]}`)
+    if (fields.fatigue) bits.push(`מאמץ ${fields.fatigue}/10`)
+    if (fields.pain) bits.push(`כאב ${fields.pain}/10`)
+    if (fields.sleep_hours) bits.push(`שינה ${fields.sleep_hours} שעות`)
+    const note = fields.free_note ? `. ${fields.free_note}` : ''
+    onAsk(`רצתי ${km}${date ? ` ב-${date}` : ''}. ${bits.join(', ')}${note}. מה דעתך?`)
+  }
 
   async function load() {
     if (!user) return
@@ -88,8 +107,24 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
   const goal = computeGoalProgress(profile)
   const maxKm = Math.max(target, ...weeklyData.map(w => w.km), 1)
 
+  // The most recent run (last 2 days) that has no subjective check-in yet
+  const cutoffYMD = (() => { const d = new Date(); d.setDate(d.getDate() - 2); return localYMD(d) })()
+  const pendingRun = updates.find(u => !u.feel && (u.update_date || (u.created_at || '').slice(0, 10)) >= cutoffYMD)
+
   return (
     <div>
+      {pendingRun && (
+        <button style={styles.nudge} onClick={() => setCheckIn(pendingRun)}>
+          <span style={styles.nudgeIcon}>👋</span>
+          <span style={{ flex: 1, textAlign: 'right' }}>
+            <span style={{ display: 'block', fontWeight: 700, fontSize: 14 }}>איך היתה הריצה?</span>
+            <span style={{ display: 'block', fontSize: 12, opacity: .92, marginTop: 1 }}>
+              {pendingRun.distance_km ? `${pendingRun.distance_km} ק"מ` : 'ריצה'} · הוסף הרגשה, מאמץ וכאב — המאמן ילמד ממך
+            </span>
+          </span>
+          <span style={{ fontSize: 18 }}>←</span>
+        </button>
+      )}
       {/* KPI grid */}
       <div style={styles.kpiGrid}>
         <Kpi
@@ -208,24 +243,32 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
         <div className="card">
           <div className="section-label">דיווחים אחרונים</div>
           {updates.slice(0, 5).map(u => {
-            const d = new Date(u.created_at)
+            const d = new Date(u.update_date || u.created_at)
+            const meta = []
+            if (u.fatigue) meta.push(`מאמץ ${u.fatigue}/10`)
+            if (u.pain) meta.push(`כאב ${u.pain}/10`)
             return (
-              <div key={u.id} style={styles.updateRow}>
+              <button key={u.id} style={styles.updateRow} onClick={() => setCheckIn(u)}>
                 <div style={styles.updateDot}>
                   <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="var(--teal)" strokeWidth="2" strokeLinecap="round">
                     <circle cx="8" cy="8" r="5.5" />
                   </svg>
                 </div>
-                <div style={{ flex: 1 }}>
+                <div style={{ flex: 1, textAlign: 'right' }}>
                   <div style={{ fontSize: 13, color: 'var(--text)' }}>
-                    {u.distance_km ? `${u.distance_km} ק"מ` : ''}{u.time_text ? ` · ${u.time_text}` : ''}
-                    {' '}הרגשה: {u.feel ? FEEL_LABELS[u.feel] : '—'}
+                    {u.distance_km ? `${u.distance_km} ק"מ` : 'ריצה'}{u.time_text ? ` · ${u.time_text}` : ''}
+                    {u.feel ? ` · ${FEEL_LABELS[u.feel]}` : ''}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-                    {d.getDate()}/{d.getMonth() + 1} · עייפות {u.fatigue}/10 · כאב {u.pain}/10
+                    {d.getDate()}/{d.getMonth() + 1}{meta.length ? ` · ${meta.join(' · ')}` : ''}
                   </div>
                 </div>
-              </div>
+                {u.feel ? (
+                  <span style={{ fontSize: 16, color: 'var(--text3)' }}>›</span>
+                ) : (
+                  <span style={styles.addPill}>הוסף פרטים</span>
+                )}
+              </button>
             )
           })}
         </div>
@@ -257,8 +300,117 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
           <span style={{ color: 'var(--teal)', fontSize: 16 }}>↗</span>
         </button>
       </div>
+
+      {checkIn && (
+        <CheckInModal
+          run={checkIn}
+          onClose={() => setCheckIn(null)}
+          onSave={saveCheckIn}
+          onTellCoach={tellCoach}
+        />
+      )}
     </div>
   )
+}
+
+function CheckInModal({ run, onClose, onSave, onTellCoach }) {
+  const [feel, setFeel] = useState(run.feel || 0)
+  const [fatigue, setFatigue] = useState(run.fatigue || 5)
+  const [pain, setPain] = useState(run.pain || 0)
+  const [sleep, setSleep] = useState(run.sleep_hours ?? '')
+  const [note, setNote] = useState(run.free_note || '')
+  const [saving, setSaving] = useState(false)
+
+  function fields() {
+    return {
+      feel: feel || null,
+      fatigue: fatigue,
+      pain: pain,
+      sleep_hours: sleep === '' ? null : Number(sleep),
+      free_note: note.trim() || null,
+    }
+  }
+
+  async function save(thenCoach) {
+    setSaving(true)
+    const f = fields()
+    await onSave(run.id, f)
+    setSaving(false)
+    if (thenCoach) onTellCoach(run, f)
+    onClose()
+  }
+
+  const km = run.distance_km ? `${run.distance_km} ק"מ` : 'ריצה'
+  const date = (run.update_date || '').split('-').reverse().slice(0, 2).join('/')
+
+  return (
+    <div style={ci.bg} onClick={onClose}>
+      <div style={ci.modal} onClick={e => e.stopPropagation()}>
+        <div style={ci.title}>איך היתה הריצה?</div>
+        <div style={ci.sub}>{km}{date ? ` · ${date}` : ''}</div>
+
+        <div style={ci.field}>
+          <label style={ci.label}>תחושה כללית</label>
+          <div style={ci.chips}>
+            {[1, 2, 3, 4, 5].map(n => (
+              <button key={n} onClick={() => setFeel(n)} style={{ ...ci.chip, ...(feel === n ? ci.chipOn : {}) }}>
+                {FEEL_LABELS[n]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={ci.field}>
+          <label style={ci.label}>כמה היה קשה? <strong style={{ color: 'var(--teal)' }}>{fatigue}/10</strong></label>
+          <input type="range" min="1" max="10" step="1" value={fatigue} onChange={e => setFatigue(Number(e.target.value))} style={ci.range} />
+          <div style={ci.scaleEnds}><span>קל מאוד</span><span>מקסימלי</span></div>
+        </div>
+
+        <div style={ci.field}>
+          <label style={ci.label}>כאב / אי-נוחות <strong style={{ color: pain >= 5 ? 'var(--red)' : 'var(--teal)' }}>{pain}/10</strong></label>
+          <input type="range" min="0" max="10" step="1" value={pain} onChange={e => setPain(Number(e.target.value))} style={ci.range} />
+          <div style={ci.scaleEnds}><span>אין</span><span>חזק</span></div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ ...ci.field, flex: 1 }}>
+            <label style={ci.label}>שעות שינה</label>
+            <input type="number" inputMode="decimal" placeholder="7" value={sleep} onChange={e => setSleep(e.target.value)} style={ci.input} />
+          </div>
+        </div>
+
+        <div style={ci.field}>
+          <label style={ci.label}>הערה (לא חובה)</label>
+          <textarea rows={2} placeholder="איך הרגשת, מזג אוויר, כל דבר..." value={note} onChange={e => setNote(e.target.value)} style={ci.input} />
+        </div>
+
+        <div style={ci.btns}>
+          <button style={ci.btnGhost} onClick={() => save(true)} disabled={saving}>שמור וספר למאמן</button>
+          <button style={ci.btnPrimary} onClick={() => save(false)} disabled={saving}>
+            {saving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : 'שמור'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const ci = {
+  bg: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 18, backdropFilter: 'blur(4px)' },
+  modal: { background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '20px 18px', width: '100%', maxWidth: 380, maxHeight: '90vh', overflowY: 'auto', boxShadow: 'var(--shadow-md)' },
+  title: { fontSize: 17, fontWeight: 700 },
+  sub: { fontSize: 12.5, color: 'var(--text3)', marginTop: 2, marginBottom: 14 },
+  field: { marginBottom: 14 },
+  label: { fontSize: 13, color: 'var(--text2)', fontWeight: 500, display: 'block', marginBottom: 7 },
+  chips: { display: 'flex', gap: 6 },
+  chip: { flex: 1, padding: '8px 2px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text2)', fontSize: 12, fontWeight: 600, cursor: 'pointer' },
+  chipOn: { borderColor: 'var(--teal)', background: 'var(--teal-l)', color: 'var(--teal-d)' },
+  range: { width: '100%' },
+  scaleEnds: { display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text3)', marginTop: 2 },
+  input: { width: '100%', fontSize: 14, padding: '9px 12px', border: '1.5px solid var(--border2)', borderRadius: 'var(--radius-sm)', background: 'var(--surface3)', color: 'var(--text)', resize: 'none' },
+  btns: { display: 'flex', gap: 8, marginTop: 18 },
+  btnGhost: { flex: 1, padding: '11px 8px', borderRadius: 'var(--radius-sm)', background: 'var(--surface2)', color: 'var(--text2)', border: 'none', fontSize: 13, fontWeight: 600 },
+  btnPrimary: { padding: '11px 22px', borderRadius: 'var(--radius-sm)', background: 'var(--teal)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' },
 }
 
 function computeGoalProgress(profile) {
@@ -462,10 +614,40 @@ const styles = {
   },
   updateRow: {
     display: 'flex',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: 10,
-    padding: '9px 0',
+    padding: '9px 2px',
+    width: '100%',
+    background: 'none',
+    border: 'none',
     borderBottom: '1px solid var(--border)',
+    cursor: 'pointer',
+    textAlign: 'right',
+  },
+  nudge: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    width: '100%',
+    padding: '13px 16px',
+    marginBottom: 14,
+    borderRadius: 'var(--radius)',
+    border: 'none',
+    background: 'var(--teal)',
+    color: '#fff',
+    cursor: 'pointer',
+    boxShadow: '0 2px 8px rgba(240,86,39,.30)',
+    textAlign: 'right',
+  },
+  nudgeIcon: { fontSize: 22, flexShrink: 0 },
+  addPill: {
+    fontSize: 11,
+    fontWeight: 700,
+    color: 'var(--teal-d)',
+    background: 'var(--teal-l)',
+    padding: '4px 10px',
+    borderRadius: 20,
+    flexShrink: 0,
   },
   updateDot: {
     width: 28,
