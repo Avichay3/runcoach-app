@@ -79,7 +79,8 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-    if (!file.type.startsWith('image/')) { alert('אפשר להעלות רק תמונות'); return }
+    const okType = file.type.startsWith('image/') || /\.(heic|heif)$/i.test(file.name || '')
+    if (!okType) { alert('אפשר להעלות רק תמונות'); return }
     setPendingImage(file)
     setPreviewUrl(URL.createObjectURL(file))
   }
@@ -275,7 +276,7 @@ export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsu
       )}
 
       <div style={styles.inputRow}>
-        <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={pickImage} />
+        <input ref={fileRef} type="file" accept="image/*,.heic,.heif" style={{ display: 'none' }} onChange={pickImage} />
         <button style={styles.attachBtn} onClick={() => fileRef.current?.click()} disabled={loading} aria-label="צרף תמונה">
           <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <rect x="2.5" y="3.5" width="15" height="13" rx="2.5" /><circle cx="7" cy="8" r="1.5" /><path d="M3 14l4-4 3 3 3-4 4 5" />

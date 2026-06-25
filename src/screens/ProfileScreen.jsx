@@ -469,7 +469,8 @@ function AvatarCard({ profile, user, onSave }) {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-    if (!file.type.startsWith('image/')) { alert('אפשר להעלות רק תמונות'); return }
+    const okType = file.type.startsWith('image/') || /\.(heic|heif)$/i.test(file.name || '')
+    if (!okType) { alert('אפשר להעלות רק תמונות'); return }
     setUploading(true)
     try {
       const blob = await compressImage(file, 512, 0.85)
@@ -490,7 +491,7 @@ function AvatarCard({ profile, user, onSave }) {
 
   return (
     <div style={av.card}>
-      <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
+      <input ref={fileRef} type="file" accept="image/*,.heic,.heif" style={{ display: 'none' }} onChange={handleFile} />
       <button style={av.ring} onClick={() => fileRef.current?.click()} disabled={uploading} aria-label="שנה תמונת פרופיל">
         {avatarUrl ? (
           <img src={avatarUrl} alt="תמונת פרופיל" style={av.img} />
