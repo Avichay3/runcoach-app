@@ -187,7 +187,7 @@ export default function App() {
 
       {/* Screen content */}
       <div style={styles.content}>
-        {tab === 'dashboard' && <DashboardScreen profile={profile} onAsk={sendToCoach} onGoProfile={() => setTab('profile')} />}
+        {tab === 'dashboard' && <DashboardScreen profile={profile} onAsk={sendToCoach} onGoProfile={() => setTab('profile')} onGoPlanner={() => setTab('planner')} />}
         {tab === 'planner'   && <PlannerScreen profile={profile} onSendToCoach={sendToCoach} />}
         {tab === 'coach'     && <CoachScreen profile={profile} weeklyKm={weeklyKm} pendingMessage={pendingMessage} onConsumePending={() => setPendingMessage(null)} />}
         {tab === 'profile'   && <ProfileScreen profile={profile} onSave={async (f) => { const r = await save(f); await reload(); return r }} />}

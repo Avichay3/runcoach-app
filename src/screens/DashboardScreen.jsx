@@ -5,19 +5,20 @@ import {
 } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { weekKeyDate, FEEL_LABELS, goalToText, localYMD } from '../lib/constants'
+import { weekKeyDate, FEEL_LABELS, goalToText, localYMD, WORKOUT_TYPES, DAYS_HE } from '../lib/constants'
 
 const CHART_WEEKS = 8
 
-export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
+export default function DashboardScreen({ profile, onAsk, onGoProfile, onGoPlanner }) {
   const { user } = useAuth()
   const [updates, setUpdates] = useState([])
   const [actualKm, setActualKm] = useState(0)        // km actually run this week
   const [runsThisWeek, setRunsThisWeek] = useState(0)
   const [weeklyData, setWeeklyData] = useState([])
   const [loading, setLoading] = useState(true)
-  const [checkIn, setCheckIn] = useState(null)   // the run being checked in
+  const [checkIn, setCheckIn] = useState(null)
   const [addRun, setAddRun] = useState(false)
+  const [todayWorkouts, setTodayWorkouts] = useState(undefined) // undefined=loading, []=rest, [...]= has workouts
 
   useEffect(() => { load() }, [user])
 
@@ -76,7 +77,25 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
     })
     setActualKm(Math.round(thisWeek.reduce((s, u) => s + (Number(u.distance_km) || 0), 0) * 10) / 10)
     setRunsThisWeek(thisWeek.length)
+
+    // Today's planned workout
+    const todayDow = new Date().getDay()
+    const { data: plan } = await supabase
+      .from('training_plans').select('id').eq('user_id', user.id).eq('week_start', weekStart).maybeSingle()
+    if (plan) {
+      const { data: wkts } = await supabase
+        .from('workouts').select('*').eq('plan_id', plan.id).eq('day_of_week', todayDow)
+      setTodayWorkouts(wkts || [])
+    } else {
+      setTodayWorkouts([])
+    }
+
     setLoading(false)
+  }
+
+  async function toggleWorkoutDone(id, current) {
+    const { data } = await supabase.from('workouts').update({ completed: !current }).eq('id', id).select().single()
+    if (data) setTodayWorkouts(prev => prev.map(w => w.id === id ? data : w))
   }
 
   function buildWeekly(ups) {
@@ -130,6 +149,13 @@ export default function DashboardScreen({ profile, onAsk, onGoProfile }) {
 
   return (
     <div>
+      {todayWorkouts !== undefined && (
+        <TodayCard
+          workouts={todayWorkouts}
+          onGoPlanner={onGoPlanner}
+          onToggleDone={toggleWorkoutDone}
+        />
+      )}
       {pendingRun && (
         <button style={styles.nudge} onClick={() => setCheckIn(pendingRun)}>
           <span style={styles.nudgeIcon}>👋</span>
@@ -426,6 +452,139 @@ function CheckInModal({ run, onClose, onSave, onTellCoach }) {
       </div>
     </div>
   )
+}
+
+const FALLBACK_TYPE = { label: 'אימון', bg: 'var(--surface2)', text: 'var(--text2)', border: 'var(--border2)' }
+
+function TodayCard({ workouts, onGoPlanner, onToggleDone }) {
+  const today = new Date()
+  const dayName = DAYS_HE[today.getDay()]
+  const dateStr = `${today.getDate()}/${today.getMonth() + 1}`
+  const allDone = workouts.length > 0 && workouts.every(w => w.completed)
+
+  if (workouts.length === 0) {
+    return (
+      <div style={tc.card}>
+        <div style={tc.header}>
+          <div>
+            <div style={tc.sup}>{dayName} · {dateStr}</div>
+            <div style={tc.title}>יום מנוחה</div>
+          </div>
+          <span style={{ fontSize: 28 }}>🛌</span>
+        </div>
+        <div style={tc.restSub}>מנוחה היא חלק מהאימון — הגוף בונה כוח כשהוא נח.</div>
+        {onGoPlanner && (
+          <button style={tc.ghostBtn} onClick={onGoPlanner}>ראה את התוכנית השבועית ←</button>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ ...tc.card, borderRight: `4px solid ${(WORKOUT_TYPES[workouts[0].type] || FALLBACK_TYPE).border}` }}>
+      <div style={tc.header}>
+        <div>
+          <div style={tc.sup}>{dayName} · {dateStr}</div>
+          <div style={{ ...tc.title, color: allDone ? 'var(--green)' : 'var(--text)' }}>
+            {allDone ? '✓ אימון הושלם!' : 'אימון היום'}
+          </div>
+        </div>
+        <span style={{ fontSize: 26 }}>{allDone ? '🎉' : '🏃'}</span>
+      </div>
+
+      <div style={tc.workoutList}>
+        {workouts.map(w => {
+          const wt = WORKOUT_TYPES[w.type] || FALLBACK_TYPE
+          return (
+            <div key={w.id} style={{ ...tc.wktRow, opacity: w.completed ? 0.55 : 1 }}>
+              <span style={{ ...tc.badge, background: wt.bg, color: wt.text }}>{wt.label}</span>
+              <span style={tc.meta}>
+                {w.distance_km ? `${w.distance_km} ק"מ` : ''}
+                {w.distance_km && w.duration_min ? ' · ' : ''}
+                {w.duration_min ? `${w.duration_min} דק'` : ''}
+              </span>
+              {w.note && <span style={tc.noteText}>{w.note}</span>}
+              <button
+                style={{ ...tc.doneBtn, ...(w.completed ? tc.doneBtnOn : {}) }}
+                onClick={() => onToggleDone(w.id, w.completed)}
+              >
+                {w.completed ? '↩ בטל' : '✓'}
+              </button>
+            </div>
+          )
+        })}
+      </div>
+
+      {onGoPlanner && (
+        <button style={tc.ghostBtn} onClick={onGoPlanner}>לפלאנר המלא ←</button>
+      )}
+    </div>
+  )
+}
+
+const tc = {
+  card: {
+    background: 'var(--surface)',
+    borderRadius: 'var(--radius)',
+    padding: '14px 16px',
+    marginBottom: 14,
+    boxShadow: 'var(--shadow-sm)',
+    border: '1px solid var(--border)',
+  },
+  header: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  sup: { fontSize: 11, color: 'var(--text3)', marginBottom: 2 },
+  title: { fontSize: 17, fontWeight: 700 },
+  restSub: { fontSize: 13, color: 'var(--text3)', marginBottom: 10, lineHeight: 1.5 },
+  workoutList: { display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 },
+  wktRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  badge: {
+    fontSize: 12,
+    fontWeight: 700,
+    padding: '4px 10px',
+    borderRadius: 20,
+    flexShrink: 0,
+  },
+  meta: { fontSize: 13, color: 'var(--text2)', fontWeight: 600 },
+  noteText: { fontSize: 12, color: 'var(--text3)', flex: 1, textAlign: 'right' },
+  doneBtn: {
+    marginRight: 'auto',
+    padding: '5px 12px',
+    borderRadius: 20,
+    border: '1.5px solid var(--border2)',
+    background: 'transparent',
+    color: 'var(--text3)',
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: 'pointer',
+    flexShrink: 0,
+  },
+  doneBtnOn: {
+    borderColor: 'var(--green)',
+    color: 'var(--green)',
+  },
+  ghostBtn: {
+    display: 'block',
+    width: '100%',
+    padding: '8px 0',
+    background: 'none',
+    border: 'none',
+    color: 'var(--teal)',
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+    textAlign: 'right',
+    marginTop: 4,
+  },
 }
 
 function AddRunModal({ onClose, onSave }) {
