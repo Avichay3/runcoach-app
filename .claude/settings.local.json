@@ -36,7 +36,16 @@
       "Bash(vercel --version)",
       "Bash(npx supabase *)",
       "mcp__0c550b18-475e-4cce-9693-432444e048bb__list_edge_functions",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "Bash(grep -v \"//.*authorize\\\\|//.*connect\\\\|console\\\\|import\\\\|export\\\\|function\\\\|const\\\\|let\\\\|var\\\\|=>\")",
+      "Bash(ls supabase/migrations/)",
+      "Bash(ls supabase/)",
+      "Bash(npx --yes web-push generate-vapid-keys --json)",
+      "mcp__0c550b18-475e-4cce-9693-432444e048bb__list_extensions",
+      "Bash(curl -s \"https://api.github.com/repos/Avichay3/runcoach-app/releases/tags/android-latest\")",
+      "Bash(node -e \"console.log\\('heic2any', require\\('./package.json'\\).dependencies['heic2any'] || 'NOT in deps'\\)\")",
+      "mcp__0c550b18-475e-4cce-9693-432444e048bb__list_projects",
+      "mcp__0c550b18-475e-4cce-9693-432444e048bb__get_logs"
     ]
   }
 }

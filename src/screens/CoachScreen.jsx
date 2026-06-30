@@ -8,9 +8,11 @@ import { compressImage } from '../lib/image'
 import { DAYS_HE, WORKOUT_TYPES, weekKeyDate, goalToText, dayOrder } from '../lib/constants'
 
 // How many recent messages to send to the coach for conversational context.
-// Set high so the coach effectively remembers the whole relationship; the
-// factual training history is always in the system prompt regardless.
-const CONTEXT_MESSAGES = 200
+// Kept modest on purpose: the coach's long-term memory (coach_memory) and the
+// full factual training history both live in the system prompt, so the recent
+// thread only needs enough turns for local continuity. Sending the whole history
+// every message was the main cost driver — 30 turns keeps quality with ~85% less.
+const CONTEXT_MESSAGES = 30
 
 export default function CoachScreen({ profile, weeklyKm, pendingMessage, onConsumePending }) {
   const { user } = useAuth()
